@@ -15,7 +15,7 @@ main = Freepalace.GUI.Gtk.main guiEventHandlers serverEventHandlers "freepalace.
 main = do
   let handlers =  setUpHandlers
   gladeFilename <- getDataFileName "freepalace.resources.glade"
-  FreePalace.GUI.Gtk.main gladeFilename handlers renderers
+  FreePalace.GUI.Gtk.main gladeFilename handlers
 
 
 
