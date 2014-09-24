@@ -1,57 +1,71 @@
-module FreePalace.GUI where
+ module FreePalace.GUI where
 
 import FreePalace.Handlers
 
-class Components a where
-  mainWindow :: (Main b, Window b) => a -> b
-  connectDialog :: Dialog b => a -> b
-  connectOk :: Button b => a -> b
-  connectCancel :: Button b => a -> b
+class WindowClass a
+class MainClass a
+class DialogClass a
+class ButtonClass a
 
-class Events a where
-  onWindowClose :: Window b => a -> b -> IO () -> IO () 
-  onButtonClicked :: Button b => a -> b -> IO () -> IO ()
+data MainWindow = MainWindow {
+  window :: (WindowClass a) => a, 
+  main :: (MainClass a) => a,
+  quit :: IO (),
+  showWindow :: IO (),
+  closeWindow :: IO ()
+}
 
-class Main a where
-  quit :: a -> IO ()
-  
-class Window a where
-  showWindow :: a -> IO ()
-  closeWindow :: a -> IO ()
-  
-class Dialog a where
-  showDialog :: a -> IO ()
-  closeDialog :: a -> IO ()
-  
-class Button a
-  
+data Dialog = Dialog {
+  dialog :: (DialogClass a) => a,
+  showDialog :: IO (),
+  closeDialog :: IO ()
+}
 
-setUpGUI :: (Components a, Events b) => a -> b -> Handlers -> IO ()
+data Components = Components {
+  mainWindow :: MainWindow,
+  connectDialog :: Dialog,
+  connectOk :: (ButtonClass a) => a,
+  connectCancel :: (ButtonClass a) => a
+}
+
+data Events = Events {
+  onWindowClose :: WindowClass a => a -> IO () -> IO (), 
+  onButtonClicked :: ButtonClass a => a -> IO () -> IO ()
+}
+
+
+setUpGUI :: Components -> Events -> Handlers -> IO ()
 setUpGUI guiComponents guiEvents handlers =
   do
     setUpMainWindow guiComponents guiEvents
     setUpConnectDialog guiComponents guiEvents handlers
     showConnectDialog guiComponents
 
-setUpMainWindow :: (Components a, Events b) => a -> b -> IO ()
+setUpMainWindow :: Components -> Events -> IO ()
 setUpMainWindow guiComponents guiEvents =
-  -- on open, show connect dialog - why does doing it this way open
-  -- the dialog behind the main window?
-  -- afterShow (mainWindow gui) (openConnectDialog gui)
-  let window = mainWindow guiComponents 
-      onClose = onWindowClose guiEvents in
-  onClose window (quit window)
+  do
+    -- on open, show connect dialog - why does doing it this way open
+    -- the dialog behind the main window?
+    -- afterShow (mainWindow gui) (openConnectDialog gui)
+    let quitAction = quit . main $ mainWindow guiComponents
+        mainWin = window $ mainWindow guiComponents
+        onClose = onWindowClose guiEvents
+    onClose mainWin quitAction
 
-setUpConnectDialog :: (Components a, Events b) => a -> b -> Handlers -> IO ()
+setUpConnectDialog :: Components -> Events -> Handlers -> IO ()
 setUpConnectDialog guiComponents guiEvents handlers =
-    let okButton = connectOk guiComponents
-        cancelButton = connectCancel guiComponents
-        onClick = onButtonClicked guiEvents
+  do
+    let onClick = onButtonClicked guiEvents
+        okButton = connectOk guiComponents
         okHandler = closeDialog $ connectDialog guiComponents
-        cancelHandler = closeDialog $ connectDialog guiComponents in
-     onClick okButton okHandler
-     onClick cancelButton cancelHandler
+    onClick okButton okHandler
+    
+    let cancelButton = connectCancel guiComponents
+        cancelHandler = closeDialog $ connectDialog guiComponents
+
+    onClick cancelButton cancelHandler
  
-showConnectDialog :: Components a => a -> IO ()
+showConnectDialog :: Components -> IO ()
 showConnectDialog guiComponents =
-  showDialog $ connectDialog guiComponents
+  do
+    showDialog $ connectDialog guiComponents
