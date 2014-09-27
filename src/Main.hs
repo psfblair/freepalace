@@ -1,7 +1,8 @@
 module Main where
 
-import FreePalace.Handlers
-import qualified FreePalace.GUI.Gtk
+import qualified FreePalace.Handlers as Handlers
+import qualified FreePalace.GUI.Gtk as Gtk
+import qualified FreePalace.Net.Socket as Socket
 
 import Paths_freepalace(getDataFileName)
 
@@ -13,9 +14,10 @@ main = Freepalace.GUI.Gtk.main guiEventHandlers serverEventHandlers "freepalace.
 -}
 
 main = do
-  let handlers =  setUpHandlers
+  let transmitters = Socket.transmitters
+      guiEventHandlers = Handlers.guiEventHandlers transmitters
   gladeFilename <- getDataFileName "freepalace.resources.glade"
-  FreePalace.GUI.Gtk.main gladeFilename handlers
+  Gtk.main gladeFilename guiEventHandlers
 
 
 

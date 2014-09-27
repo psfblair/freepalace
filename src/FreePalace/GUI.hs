@@ -1,57 +1,67 @@
 module FreePalace.GUI where
 
-import FreePalace.Handlers
+import qualified FreePalace.Handlers as Handlers
 
-class Components a where
-  mainWindow :: (Main b, Window b) => a -> b
-  connectDialog :: Dialog b => a -> b
-  connectOk :: Button b => a -> b
-  connectCancel :: Button b => a -> b
+data MainWindow = MainWindow {
+  quit :: IO (),
+  showWindow :: IO (),
+  closeWindow :: IO (),
+  onWindowClose :: IO () -> IO ()
+}
 
-class Events a where
-  onWindowClose :: Window b => a -> b -> IO () -> IO () 
-  onButtonClicked :: Button b => a -> b -> IO () -> IO ()
+data Dialog = Dialog {
+  showDialog :: IO (),
+  closeDialog :: IO ()
+}
 
-class Main a where
-  quit :: a -> IO ()
-  
-class Window a where
-  showWindow :: a -> IO ()
-  closeWindow :: a -> IO ()
-  
-class Dialog a where
-  showDialog :: a -> IO ()
-  closeDialog :: a -> IO ()
-  
-class Button a
-  
+data Button = Button {
+  onButtonClick :: IO () -> IO ()
+}
 
-setUpGUI :: (Components a, Events b) => a -> b -> Handlers -> IO ()
-setUpGUI guiComponents guiEvents handlers =
+data TextField = TextField {
+  textValue :: IO String
+}
+                 
+data Components = Components {
+  mainWindow :: MainWindow,
+  connectDialog :: Dialog,
+  connectHostEntry :: TextField,
+  connectPortEntry :: TextField,
+  connectOk :: Button,
+  connectCancel :: Button
+}
+
+setUpGUI :: Components -> Handlers.GUIEventHandlers -> IO ()
+setUpGUI guiComponents handlers =
   do
-    setUpMainWindow guiComponents guiEvents
-    setUpConnectDialog guiComponents guiEvents handlers
+    setUpMainWindow guiComponents
+    setUpConnectDialog guiComponents handlers
     showConnectDialog guiComponents
 
-setUpMainWindow :: (Components a, Events b) => a -> b -> IO ()
-setUpMainWindow guiComponents guiEvents =
-  -- on open, show connect dialog - why does doing it this way open
-  -- the dialog behind the main window?
-  -- afterShow (mainWindow gui) (openConnectDialog gui)
-  let window = mainWindow guiComponents 
-      onClose = onWindowClose guiEvents in
-  onClose window (quit window)
+setUpMainWindow :: Components -> IO ()
+setUpMainWindow guiComponents =
+  do
+    let mainWin = mainWindow guiComponents
+        quitAction = quit mainWin
+    onWindowClose mainWin $ quitAction
 
-setUpConnectDialog :: (Components a, Events b) => a -> b -> Handlers -> IO ()
-setUpConnectDialog guiComponents guiEvents handlers =
+setUpConnectDialog :: Components -> Handlers.GUIEventHandlers -> IO ()
+setUpConnectDialog guiComponents handlers =
+  do
     let okButton = connectOk guiComponents
-        cancelButton = connectCancel guiComponents
-        onClick = onButtonClicked guiEvents
-        okHandler = closeDialog $ connectDialog guiComponents
-        cancelHandler = closeDialog $ connectDialog guiComponents in
-     onClick okButton okHandler
-     onClick cancelButton cancelHandler
+        okHandler = do
+          let hostSource = textValue $ connectHostEntry guiComponents
+              portSource = textValue $ connectPortEntry guiComponents
+          Handlers.connectOkHandler handlers hostSource portSource
+          closeDialog $ connectDialog guiComponents
+    onButtonClick okButton $ okHandler
+    
+    let cancelButton = connectCancel guiComponents
+        cancelHandler = closeDialog $ connectDialog guiComponents
+
+    onButtonClick cancelButton cancelHandler
  
-showConnectDialog :: Components a => a -> IO ()
+showConnectDialog :: Components -> IO ()
 showConnectDialog guiComponents =
-  showDialog $ connectDialog guiComponents
+  do
+    showDialog $ connectDialog guiComponents
