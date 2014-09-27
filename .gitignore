@@ -1,2 +1,5 @@
 .cabal-sandbox
 dist/
+out/
+.idea
+*.iml

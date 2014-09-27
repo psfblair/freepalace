@@ -4,7 +4,7 @@ import qualified FreePalace.GUI as GUI
 import qualified FreePalace.Handlers as Handlers
 
 import Graphics.UI.Gtk
-import Graphics.UI.Gtk.Glade
+import Graphics.UI.Gtk.Builder
 import Control.Concurrent
 
 data GtkGui = GtkGui {
@@ -30,14 +30,16 @@ main gladepath handlers =
 loadGladeComponents :: FilePath -> IO GtkGui
 loadGladeComponents gladepath =
   do
-    Just gladeXml <- xmlNew gladepath
-    mainWindow <- xmlGetWidget gladeXml castToWindow "mainWindow"
+    builder <- builderNew
+    builderAddFromFile builder gladepath
 
-    connectDialog <- xmlGetWidget gladeXml castToDialog "connectDialog"
-    connectHostEntry <- xmlGetWidget gladeXml castToEntry "hostEntry"
-    connectPortEntry <- xmlGetWidget gladeXml castToEntry "portEntry"
-    connectOkButton <- xmlGetWidget gladeXml castToButton "connectOk"
-    connectCancelButton <- xmlGetWidget gladeXml castToButton "connectCancel"
+    mainWindow <- builderGetObject builder castToWindow "mainWindow"
+
+    connectDialog <- builderGetObject builder castToDialog "connectDialog"
+    connectHostEntry <- builderGetObject builder castToEntry "hostEntry"
+    connectPortEntry <- builderGetObject builder castToEntry "portEntry"
+    connectOkButton <- builderGetObject builder castToButton "connectOk"
+    connectCancelButton <- builderGetObject builder castToButton "connectCancel"
 
     return $ GtkGui mainWindow connectDialog connectHostEntry connectPortEntry connectOkButton connectCancelButton
 
