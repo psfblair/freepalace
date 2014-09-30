@@ -31,11 +31,11 @@ data Components = Components {
   connectCancel :: Button
 }
 
-setUpGUI :: Components -> Handlers.GUIEventHandlers -> IO ()
-setUpGUI guiComponents handlers =
+initializeGUI :: Components -> Handlers.ConnectRequestHandler -> IO ()
+initializeGUI guiComponents handler =
   do
     setUpMainWindow guiComponents
-    setUpConnectDialog guiComponents handlers
+    setUpConnectDialog guiComponents handler
     showConnectDialog guiComponents
 
 setUpMainWindow :: Components -> IO ()
@@ -43,18 +43,19 @@ setUpMainWindow guiComponents =
   do
     let mainWin = mainWindow guiComponents
         quitAction = quit mainWin
-    onWindowClose mainWin $ quitAction
+    onWindowClose mainWin quitAction
 
-setUpConnectDialog :: Components -> Handlers.GUIEventHandlers -> IO ()
-setUpConnectDialog guiComponents handlers =
+setUpConnectDialog :: Components -> Handlers.ConnectRequestHandler -> IO ()
+setUpConnectDialog guiComponents connectHandler =
   do
     let okButton = connectOk guiComponents
         okHandler = do
-          let hostSource = textValue $ connectHostEntry guiComponents
-              portSource = textValue $ connectPortEntry guiComponents
-          Handlers.connectOkHandler handlers hostSource portSource
+          host <- textValue $ connectHostEntry guiComponents
+          port <- textValue $ connectPortEntry guiComponents
+          guiEventHandlers <- connectHandler host port
+          addHandlersToGUI guiComponents guiEventHandlers
           closeDialog $ connectDialog guiComponents
-    onButtonClick okButton $ okHandler
+    onButtonClick okButton okHandler
     
     let cancelButton = connectCancel guiComponents
         cancelHandler = closeDialog $ connectDialog guiComponents
@@ -62,6 +63,7 @@ setUpConnectDialog guiComponents handlers =
     onButtonClick cancelButton cancelHandler
  
 showConnectDialog :: Components -> IO ()
-showConnectDialog guiComponents =
-  do
-    showDialog $ connectDialog guiComponents
+showConnectDialog guiComponents = showDialog $ connectDialog guiComponents
+
+addHandlersToGUI :: Components -> Handlers.GUIEventHandlers -> IO ()
+addHandlersToGUI guiComponents guiEventHandlers = return ()

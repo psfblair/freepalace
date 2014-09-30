@@ -17,14 +17,14 @@ data GtkGui = GtkGui {
 }
 
 
-main :: FilePath -> Handlers.GUIEventHandlers -> IO ()
-main gladepath handlers =
+main :: FilePath -> Handlers.ConnectRequestHandler -> IO ()
+main gladepath connectRequestHandler =
   do
     initGUI
     timeoutAddFull (yield >> return True) priorityDefaultIdle 100
     gui <- loadGladeComponents gladepath
     let components = wrapComponents gui
-    GUI.setUpGUI components handlers 
+    GUI.initializeGUI components connectRequestHandler 
     mainGUI
 
 loadGladeComponents :: FilePath -> IO GtkGui
