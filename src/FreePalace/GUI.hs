@@ -1,5 +1,8 @@
 module FreePalace.GUI where
 
+-- TODO Need Log Window
+-- TODO Need Disconnect menu item and Quit menu item
+
 import qualified FreePalace.Handlers as Handlers
 
 data MainWindow = MainWindow {
@@ -48,13 +51,14 @@ setUpMainWindow guiComponents =
 setUpConnectDialog :: Components -> Handlers.ConnectRequestHandler -> IO ()
 setUpConnectDialog guiComponents connectHandler =
   do
-    let okButton = connectOk guiComponents
+    let okButton = connectOk guiComponents 
         okHandler = do
           host <- textValue $ connectHostEntry guiComponents
           port <- textValue $ connectPortEntry guiComponents
-          guiEventHandlers <- connectHandler host port
-          addHandlersToGUI guiComponents guiEventHandlers
-          closeDialog $ connectDialog guiComponents
+          connectHandler host port
+          -- addHandlersToGUI guiComponents handlers
+          closeDialog $ connectDialog guiComponents -- TODO Move this into handler?
+
     onButtonClick okButton okHandler
     
     let cancelButton = connectCancel guiComponents

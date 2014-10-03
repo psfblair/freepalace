@@ -21,7 +21,8 @@ executable freepalace
   other-modules:       
   -- other-extensions:    
   build-depends:       base >=4.7 && <4.8,
-                       containers, gtk, network
+                       containers, gtk, network,
+                       bytestring, text, binary, encoding
   hs-source-dirs:      src
   default-language:    Haskell2010
 

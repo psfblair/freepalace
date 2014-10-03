@@ -2,110 +2,143 @@ module FreePalace.Net.Messages where
 
 import System.IO
 import Data.Char
+import qualified Data.Text as Text
+import Data.Bits
 import qualified Data.Map as Map
 import Control.Applicative
 
 import FreePalace.Net as Net
 
-readMessageType :: Net.IncomingByteSource -> IO IncomingMessage
-readMessageType byteSource = idToMessageType <$> readWord byteSource
+data UserId = UserId { userName :: String } -- TODO Limit to 31 characters
 
-readHeader :: Net.IncomingByteSource -> IO Header
-readHeader byteSource = 
-  do
-    msgType <- readMessageType byteSource
-    size <- readWord byteSource
-    referenceNumber <- readWord byteSource
-    return Header {
-      messageType = msgType,
-      messageSize = size,
-      messageRefNumber = referenceNumber
-    }
-    
-readMessageBody :: Net.IncomingByteSource -> Header -> (Header -> [Int] -> IncomingMessage) -> IO IncomingMessage
-readMessageBody byteSource header messageConstructor =
-  do
-    let length = messageSize header
-    messageBytes <- readWords length byteSource
-    return (messageConstructor header messageBytes)
-  
 data Header = Header {
-  messageType :: IncomingMessage,
+  messageType :: MessageType,
   messageSize :: Int,
   messageRefNumber :: Int
 }
 
-data IncomingMessage =  LittleEndianServer | BigEndianServer | UnknownServer | -- 68000 & early SPARC big-endian, PPC & later SPARC bi-endian.
-                        AlternateLogonReply | Authenticate |                    
-                        ServerVersion | ServerInfo |
-                        UserStatus  | UserLoggedOnAndMax |
-                        GotHttpServerLocation |
-                        -- the following four are whenever you change rooms as well as login
-                        GotRoomDescription | GotRoomDescriptionAlt | GotUserList | GotRoomList |                        
-                        GotReplyOfAllRooms | GotReplyOfAllUsers |                     
-                        RoomDescend | -- ?
-                        Pinged |                   
-                        XTalk | XWhisper | Talk  | Whisper | -- Xtalk and Xwhisper are encrypted; Talk and Whisper unencrypted
-                        Movement |
-                        UserNew | UserColor | UserFace | UserDescription | UserProp | UserRename | UserExitRoom | UserLeaving | -- UserLeaving ?
-                        ConnectionDied |
-                        IncomingFile | AssetIncoming | AssetQuery |
-                        DoorLock | DoorUnlock | SpotState | SpotMove | PictMove |
-                        DrawCmd | 
-                        PropMove | PropDelete | PropNew | -- loose props
-                        NavError |
-                        ServerDown |
-                        Blowthru |
-                        UnknownMessage
+class MessageClass msg where
+  messageTypeId :: msg -> Int
 
-idToMessageType :: Int -> IncomingMessage
+data MessageType =  -- Bidirectional messages
+                UserColor | UserFace | UserProp |
+                SpotState | DoorLock | DoorUnlock |
+                PropNew | PropMove | PropDelete |  -- loose props
+                Whisper |
+                Blowthru |
+                
+                -- Incoming messages
+                LittleEndianServer | BigEndianServer | UnknownServer | -- 68000 & early SPARC big-endian, PPC & later SPARC bi-endian.
+                AlternateLogonReply | Authenticate |                    
+                ServerVersion | ServerInfo |
+                UserStatus  | UserLoggedOnAndMax |
+                GotHttpServerLocation |
+                -- the following four are whenever you change rooms as well as login
+                GotRoomDescription | GotRoomDescriptionAlt | GotUserList | GotRoomList |                        
+                GotReplyOfAllRooms | GotReplyOfAllUsers |                     
+                RoomDescend | -- ?
+                Pinged |                   
+                XTalk | XWhisper | Talk  | -- Xtalk and Xwhisper are encrypted; Talk and Whisper unencrypted
+                Movement |
+                UserNew | UserDescription | UserRename | UserExitRoom | UserLeaving | -- UserLeaving ?
+                ConnectionDied |
+                IncomingFile | AssetIncoming | AssetQuery |
+                SpotMove | PictMove |
+                DrawCmd | 
+                NavError |
+                ServerDown |
+                UnknownMessage |
+                
+                -- Outgoing messages
+                Logon | Authresponse | PingBack | Bye |
+                Superuser |
+                RequestRoomList | GotoRoom |
+                RequestUserList |                        
+                ChangeName |                        
+                Say | 
+                GlobalMsg | RoomMsg | SusrMsg |
+                Move | 
+                RequestAsset |                 
+                AssetRegi |                        
+                Draw 
+            deriving (Enum, Bounded)
+
+instance MessageClass MessageType where  
+    messageTypeId UserColor = 1970500163
+    messageTypeId UserFace = 1970500166
+    messageTypeId UserProp = 1970500176
+    messageTypeId SpotState = 1934849121
+    messageTypeId DoorLock = 1819239275
+    messageTypeId DoorUnlock = 1970170991
+    messageTypeId PropNew = 1850765936
+    messageTypeId PropMove = 1833988720
+    messageTypeId PropDelete = 1682993776
+    messageTypeId Whisper = 2003331443
+    messageTypeId Blowthru = 1651273591
+    
+    messageTypeId LittleEndianServer = 1920559476
+    messageTypeId BigEndianServer = 1953069426
+    messageTypeId UnknownServer = 1886610802
+    messageTypeId AlternateLogonReply = 1919250482
+    messageTypeId Authenticate = 1635087464
+    messageTypeId ServerVersion = 1986359923
+    messageTypeId ServerInfo = 1936289382
+    messageTypeId UserStatus = 1968403553
+    messageTypeId UserLoggedOnAndMax = 1819240224
+    messageTypeId GotHttpServerLocation = 1213486160
+    messageTypeId GotRoomDescription = 1919905645
+    messageTypeId GotRoomDescriptionAlt = 1934782317
+    messageTypeId GotUserList = 1919971955
+    messageTypeId GotRoomList = 1917612916
+    messageTypeId GotReplyOfAllRooms = 1917612916
+    messageTypeId GotReplyOfAllUsers = 1967944564    
+    messageTypeId RoomDescend = 1701733490
+    messageTypeId Pinged = 1885957735
+    messageTypeId XTalk = 2020895851
+    messageTypeId XWhisper = 2021091699
+    messageTypeId Talk = 1952541803
+    messageTypeId Movement = 1967943523
+    messageTypeId UserNew = 1852863091
+    messageTypeId UserDescription = 1970500164
+    messageTypeId UserRename = 1970500174
+    messageTypeId UserExitRoom = 1701868147
+    messageTypeId UserLeaving = 1652122912
+    messageTypeId ConnectionDied = 1685026670
+    messageTypeId IncomingFile = 1933994348
+    messageTypeId AssetQuery = 1900114804
+    messageTypeId AssetIncoming = 1933669236
+    messageTypeId SpotMove = 1668238451
+    messageTypeId PictMove = 1884057443
+    messageTypeId DrawCmd = 1685217655
+    messageTypeId NavError = 1933931122
+    messageTypeId ServerDown = 1685026670
+    
+    messageTypeId Logon = 0X72656769
+    messageTypeId Authresponse = 0X61757472
+    messageTypeId PingBack = 0X706F6E67
+    messageTypeId Bye = 0X62796520
+    messageTypeId Superuser = 0X73757372
+    messageTypeId RequestRoomList = 0X724C7374
+    messageTypeId GotoRoom = 0X6E617652
+    messageTypeId RequestUserList = 0X754C7374
+    messageTypeId ChangeName = 0X7573724E
+    messageTypeId Say = 0X78746C6B
+    messageTypeId GlobalMsg = 0X676D7367
+    messageTypeId RoomMsg = 0X726D7367
+    messageTypeId SusrMsg = 0X736D7367
+    messageTypeId Move = 1967943523
+    messageTypeId RequestAsset = 0X71417374
+    messageTypeId AssetRegi = 0X72417374
+    messageTypeId Draw = 0X64726177
+                      
+idToMessageType :: Int -> MessageType
 idToMessageType messageTypeId =
-  Map.findWithDefault UnknownMessage messageTypeId idsToMessages 
-    where idsToMessages = Map.fromList
-                            [(1920559476,LittleEndianServer)
-                            ,(1953069426,BigEndianServer)
-                            ,(1886610802,UnknownServer)
-                            ,(1919250482,AlternateLogonReply)
-                            ,(0x61757468,Authenticate)
-                            ,(1986359923,ServerVersion)
-                            ,(1936289382,ServerInfo)
-                            ,(1968403553,UserStatus)
-                            ,(1819240224,UserLoggedOnAndMax)
-                            ,(1213486160,GotHttpServerLocation)
-                            ,(1919905645,GotRoomDescription)
-                            ,(1934782317,GotRoomDescriptionAlt)
-                            ,(1919971955,GotUserList)
-                            ,(1917612916,GotRoomList)
-                            ,(1701733490,RoomDescend)
-                            ,(1852863091,UserNew)
-                            ,(1885957735,Pinged)
-                            ,(0x78746c6b,XTalk)
-                            ,(0x78776973,XWhisper)
-                            ,(0x74616c6b,Talk)
-                            ,(0x77686973,Whisper)
-                            ,(1967943523,Movement)
-                            ,(1970500163,UserColor)
-                            ,(1970500166,UserFace)
-                            ,(1970500164,UserDescription)
-                            ,(1970500176,UserProp)
-                            ,(1970500174,UserRename)
-                            ,(1652122912,UserLeaving)
-                            ,(1685026670,ConnectionDied)
-                            ,(1933994348,IncomingFile)
-                            ,(1933669236,AssetIncoming)
-                            ,(1701868147,UserExitRoom)
-                            ,(1917612916,GotReplyOfAllRooms)
-                            ,(1967944564,GotReplyOfAllUsers)
-                            ,(1819239275,DoorLock)
-                            ,(1970170991,DoorUnlock)
-                            ,(1934849121,SpotState)
-                            ,(1668238451,SpotMove)
-                            ,(1884057443,PictMove)
-                            ,(1685217655,DrawCmd)
-                            ,(1833988720,PropMove)
-                            ,(1682993776,PropDelete)
-                            ,(1850765936,PropNew)
-                            ,(1900114804,AssetQuery)
-                            ,(1933931122,NavError)
-                            ,(1685026670,ServerDown)
-                            ,(1651273591,Blowthru)]
+  Map.findWithDefault UnknownMessage messageTypeId idsToMessageTypes 
+    where messageTypes = [(minBound :: MessageType) ..]
+          idsToMessageTypes = Map.fromList $ map messageTypeToIdTypePair messageTypes
+
+messageTypeToIdTypePair :: MessageType -> (Int, MessageType)
+messageTypeToIdTypePair msgType = (messageTypeId msgType, msgType)
+
+
+
