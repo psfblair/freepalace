@@ -34,7 +34,7 @@ handleHandshake connectionHandle =
   do
     msgType <- Msg.messageType <$> (Recv.readHeader connectionHandle)
     case msgType of
-      Msg.LittleEndianServer ->  return $ Right connectionHandle -- TODO send logon
+      Msg.LittleEndianServer ->  return $ Right connectionHandle
       Msg.BigEndianServer    ->  return $ Left "Connection with big endian servers not supported" -- TODO Use different readWords functions
       Msg.UnknownServer      ->  return $ Left "Unknown server type"
       _                      ->  return $ Left "Unknown server type"

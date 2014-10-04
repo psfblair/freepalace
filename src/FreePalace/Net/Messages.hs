@@ -61,7 +61,7 @@ data MessageType =  -- Bidirectional messages
                 RequestAsset |                 
                 AssetRegi |                        
                 Draw 
-            deriving (Enum, Bounded)
+            deriving (Enum, Bounded, Show)
 
 instance MessageClass MessageType where  
     messageTypeId UserColor = 1970500163
@@ -130,6 +130,8 @@ instance MessageClass MessageType where
     messageTypeId RequestAsset = 0X71417374
     messageTypeId AssetRegi = 0X72417374
     messageTypeId Draw = 0X64726177
+
+    messageTypeId UnknownMessage = 0x00
                       
 idToMessageType :: Int -> MessageType
 idToMessageType messageTypeId =

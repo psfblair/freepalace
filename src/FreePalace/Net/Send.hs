@@ -85,7 +85,7 @@ sendLogin byteSink userId =
                   .++ (Builder.word16LE       desiredRoomId) 
                   .++ (Builder.byteString     reserved)
                   .++ (toByteStringBuilder   (uploadRequestedProtocolVersion : uploadCapabilities : downloadCapabilities : upload2DEngineCapabilities :
-                                            upload2dGraphicsCapabilities : upload3DEngineCapabilities : []))
+                                              upload2dGraphicsCapabilities : upload3DEngineCapabilities : []))
 
     let message = Builder.toLazyByteString builder
     Net.writeBytes byteSink message
