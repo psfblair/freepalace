@@ -28,7 +28,7 @@ data MessageType =  -- Bidirectional messages
                 Blowthru |
                 
                 -- Incoming messages
-                LittleEndianServer | BigEndianServer | UnknownServer | -- 68000 & early SPARC big-endian, PPC & later SPARC bi-endian.
+                LittleEndianServer | BigEndianServer | UnknownServer | -- Not necessarily processor architecture-based
                 AlternateLogonReply | Authenticate |                    
                 ServerVersion | ServerInfo |
                 UserStatus  | UserLoggedOnAndMax |
@@ -76,9 +76,9 @@ instance MessageClass MessageType where
     messageTypeId Whisper = 2003331443
     messageTypeId Blowthru = 1651273591
     
-    messageTypeId LittleEndianServer = 1920559476
-    messageTypeId BigEndianServer = 1953069426
-    messageTypeId UnknownServer = 1886610802
+    messageTypeId LittleEndianServer = 1920559476 -- MSG_DIYIT highfirst = true
+    messageTypeId BigEndianServer = 1953069426  -- MSG_TIYID   highfirst = false
+    messageTypeId UnknownServer = 1886610802 -- MSG_TROPSER
     messageTypeId AlternateLogonReply = 1919250482
     messageTypeId Authenticate = 1635087464
     messageTypeId ServerVersion = 1986359923

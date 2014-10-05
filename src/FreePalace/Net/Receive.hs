@@ -5,24 +5,22 @@ import FreePalace.Net.Messages
 
 import Control.Applicative
 
-readMessageType :: IncomingByteSource -> IO MessageType
-readMessageType byteSource = idToMessageType <$> readWord byteSource
-
-readHeader :: IncomingByteSource -> IO Header
-readHeader byteSource = 
+readHeader :: Communicators -> IO Header
+readHeader communicators = 
   do
-    msgType <- readMessageType byteSource
-    size <- readWord byteSource
-    referenceNumber <- readWord byteSource
+    let readNextInt = readInt communicators
+    msgType <- idToMessageType <$> readNextInt
+    size <- readNextInt
+    referenceNumber <- readNextInt
     return Header {
       messageType = msgType,
       messageSize = size,
       messageRefNumber = referenceNumber
     }
     
-readMessageBody :: IncomingByteSource -> Header -> (Header -> [Int] -> MessageType) -> IO MessageType
-readMessageBody byteSource header messageConstructor =
+readMessageBody :: Communicators -> Header -> (Header -> [Int] -> MessageType) -> IO MessageType
+readMessageBody communicators header messageConstructor =
   do
     let length = messageSize header
-    messageBytes <- readWords length byteSource
+    messageBytes <- readInts communicators $ length 
     return (messageConstructor header messageBytes)

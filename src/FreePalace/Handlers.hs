@@ -6,6 +6,7 @@ import qualified FreePalace.Net as Net
 import qualified FreePalace.Net.Messages as Msg
 import qualified FreePalace.Net.Receive as Recv
 import qualified FreePalace.Net.Send as Send
+import qualified System.Log.Logger as Log
 
 type ConnectRequestHandler = String -> String -> IO ()
 
@@ -14,13 +15,13 @@ handleConnectRequested connectors host portString =
   do
     let connector = Net.connector connectors
     channels <- connector (host::Net.Hostname) (portString::Net.PortId) 
-    handshake <- handleHandshake $ Net.source channels    -- Now in STATE_HANDSHAKING
+    handshake <- handleHandshake channels    -- Now in STATE_HANDSHAKING
     case handshake of
       Left msg -> return () -- TODO Provide some way to indicate connection failed. Don't close the connection window.
-      Right source ->  -- Now in STATE_READY 
+      Right communicators ->  -- Now in STATE_READY 
         do
-          Send.sendLogin (Net.sink channels) (Msg.UserId { Msg.userName = "Haskell Curry"} )  -- TODO Also could raise IO Error
-        -- Send login message
+          -- TODO Allow user to set user name
+          Send.sendLogin communicators $ Msg.UserId { Msg.userName = "Haskell Curry"}  -- TODO Also could raise IO Error
         -- Fork off socket listening thread, passing in GUI?
         -- Bind event handlers to the IO Handle
         -- return GUIEventHandlers ?
@@ -29,13 +30,17 @@ handleConnectRequested connectors host portString =
 
 -- TODO Time out if this takes too long
 -- TODO Use IOError instead of Either? Or at least don't wrap strings in Either
-handleHandshake :: Net.IncomingByteSource -> IO (Either String Net.IncomingByteSource)
-handleHandshake connectionHandle =
+handleHandshake :: Net.Channels -> IO (Either String Net.Communicators)
+handleHandshake channels =
   do
-    msgType <- Msg.messageType <$> (Recv.readHeader connectionHandle)
+    let byteSource = Net.source channels
+    let byteSink = Net.sink channels
+    let bigEndianCommunicators =  Net.bigEndianCommunicators byteSource byteSink
+    msgType <- Msg.messageType <$> Recv.readHeader bigEndianCommunicators -- default to big endian
+    Log.debugM "Incoming.Handshake" (show msgType)
     case msgType of
-      Msg.LittleEndianServer ->  return $ Right connectionHandle
-      Msg.BigEndianServer    ->  return $ Left "Connection with big endian servers not supported" -- TODO Use different readWords functions
+      Msg.BigEndianServer    ->  return $ Right bigEndianCommunicators
+      Msg.LittleEndianServer ->  return $ Right (Net.littleEndianCommunicators byteSource byteSink)
       Msg.UnknownServer      ->  return $ Left "Unknown server type"
       _                      ->  return $ Left "Unknown server type"
 
