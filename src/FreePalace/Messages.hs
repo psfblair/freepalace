@@ -1,4 +1,4 @@
-module FreePalace.Net.Messages where
+module FreePalace.Messages where
 
 import System.IO
 import Data.Char
@@ -7,18 +7,16 @@ import Data.Bits
 import qualified Data.Map as Map
 import Control.Applicative
 
-import FreePalace.Net as Net
-
-data UserId = UserId { userName :: String } -- TODO Limit to 31 characters
+data UserId = UserId { userRef :: Int, userName :: String } deriving Show -- TODO Limit to 31 characters
 
 data Header = Header {
   messageType :: MessageType,
   messageSize :: Int,
   messageRefNumber :: Int
-}
+} deriving Show
 
-class MessageClass msg where
-  messageTypeId :: msg -> Int
+class Message msgType where
+  messageTypeId :: msgType -> Int
 
 data MessageType =  -- Bidirectional messages
                 UserColor | UserFace | UserProp |
@@ -63,7 +61,7 @@ data MessageType =  -- Bidirectional messages
                 Draw 
             deriving (Enum, Bounded, Show)
 
-instance MessageClass MessageType where  
+instance Message MessageType where  
     messageTypeId UserColor = 1970500163
     messageTypeId UserFace = 1970500166
     messageTypeId UserProp = 1970500176

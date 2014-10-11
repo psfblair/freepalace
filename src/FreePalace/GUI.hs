@@ -1,40 +1,10 @@
 module FreePalace.GUI where
 
--- TODO Need Log Window
--- TODO Need Disconnect menu item and Quit menu item
-
 import qualified FreePalace.Handlers as Handlers
+import qualified FreePalace.Net.Types as Net
+import FreePalace.GUI.Types
 
-data MainWindow = MainWindow {
-  quit :: IO (),
-  showWindow :: IO (),
-  closeWindow :: IO (),
-  onWindowClose :: IO () -> IO ()
-}
-
-data Dialog = Dialog {
-  showDialog :: IO (),
-  closeDialog :: IO ()
-}
-
-data Button = Button {
-  onButtonClick :: IO () -> IO ()
-}
-
-data TextField = TextField {
-  textValue :: IO String
-}
-                 
-data Components = Components {
-  mainWindow :: MainWindow,
-  connectDialog :: Dialog,
-  connectHostEntry :: TextField,
-  connectPortEntry :: TextField,
-  connectOk :: Button,
-  connectCancel :: Button
-}
-
-initializeGUI :: Components -> Handlers.ConnectRequestHandler -> IO ()
+initializeGUI :: Components -> (Net.Hostname -> Net.PortId -> IO ()) -> IO ()
 initializeGUI guiComponents handler =
   do
     setUpMainWindow guiComponents
@@ -46,9 +16,9 @@ setUpMainWindow guiComponents =
   do
     let mainWin = mainWindow guiComponents
         quitAction = quit mainWin
-    onWindowClose mainWin quitAction
+    onMainWindowClose mainWin quitAction
 
-setUpConnectDialog :: Components -> Handlers.ConnectRequestHandler -> IO ()
+setUpConnectDialog :: Components -> (Net.Hostname -> Net.PortId -> IO ()) -> IO ()
 setUpConnectDialog guiComponents connectHandler =
   do
     let okButton = connectOk guiComponents 
@@ -56,8 +26,7 @@ setUpConnectDialog guiComponents connectHandler =
           host <- textValue $ connectHostEntry guiComponents
           port <- textValue $ connectPortEntry guiComponents
           connectHandler host port
-          -- addHandlersToGUI guiComponents handlers
-          closeDialog $ connectDialog guiComponents -- TODO Move this into handler?
+
 
     onButtonClick okButton okHandler
     
