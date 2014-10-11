@@ -25,13 +25,16 @@ readHeader readNextInt =
       Messages.messageRefNumber = referenceNumber
     }
 
+readNullTerminatedTextFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -> Net.IncomingByteSource -> Int -> IO String
+readNullTerminatedTextFromNetwork endianConverter byteSource numberOfCharacters =
+  do
+    chars <- readTextFromNetwork endianConverter byteSource numberOfCharacters
+    return $ init chars   -- throw away last byte (null terminator)
+  
 -- Assume 2-byte Win-1252 characters. OpenPalace seems to let user select UTF-8 as well; not sure how that works.
 readTextFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -> Net.IncomingByteSource -> Int -> IO String
 readTextFromNetwork endianConverter byteSource numberOfCharacters =
-  do
-    chars <- sequence $ take (numberOfCharacters - 1) $ repeat (readCharFromNetwork byteSource)
-    readByteFromNetwork byteSource  -- throw away last byte (null terminator)
-    return chars
+  sequence $ take numberOfCharacters $ repeat (readCharFromNetwork byteSource)
     
 -- TODO Deal with IOErrors somewhere up the stack
 readIntsFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -> Net.IncomingByteSource -> Int -> IO [Int]
@@ -44,9 +47,13 @@ readIntFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -
 readIntFromNetwork endianConverter (Net.SocketByteSource socket) =
   fromIntegral <$> Get.runGet Get.getWord32be <$> endianConverter <$> NetworkLazyByteString.recv socket 4
 
+readShortFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -> Net.IncomingByteSource -> IO Word16
+readShortFromNetwork endianConverter (Net.SocketByteSource socket) =
+  Get.runGet Get.getWord16be <$> endianConverter <$> NetworkLazyByteString.recv socket 2
+  
 readCharFromNetwork :: Net.IncomingByteSource -> IO Char
 readCharFromNetwork (Net.SocketByteSource socket) =
-  Convert.convert <$> LazyByteString.head <$> readByteFromNetwork (Net.SocketByteSource socket)
+  Convert.convert <$> readByteFromNetwork (Net.SocketByteSource socket)
   
-readByteFromNetwork :: Net.IncomingByteSource -> IO LazyByteString.ByteString
-readByteFromNetwork (Net.SocketByteSource socket) = NetworkLazyByteString.recv socket 1
+readByteFromNetwork :: Net.IncomingByteSource -> IO Word8
+readByteFromNetwork (Net.SocketByteSource socket) = LazyByteString.head <$> NetworkLazyByteString.recv socket 1

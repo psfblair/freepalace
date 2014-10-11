@@ -24,8 +24,11 @@ data Connectors = Connectors {
 data Communicators = Communicators {
   readInt :: IO Int,
   readInts :: Int -> IO [Int],
+  readByte :: IO Word8,
+  readShort :: IO Word16,
   readHeader :: IO Messages.Header,
   readText :: Int -> IO String,
+  readTextNoTerminator :: Int -> IO String,
   writeBytes :: LazyByteString.ByteString -> IO ()
 }
 

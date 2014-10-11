@@ -31,7 +31,10 @@ bigEndianCommunicators :: Net.IncomingByteSource -> Net.OutgoingByteSink -> Net.
 bigEndianCommunicators byteSource byteSink = Net.Communicators {
   Net.readInt = Receive.readIntFromNetwork id byteSource,
   Net.readInts = Receive.readIntsFromNetwork id byteSource,
-  Net.readText = Receive.readTextFromNetwork id byteSource,
+  Net.readByte = Receive.readByteFromNetwork byteSource,
+  Net.readShort = Receive.readShortFromNetwork id byteSource,
+  Net.readText = Receive.readNullTerminatedTextFromNetwork id byteSource,
+  Net.readTextNoTerminator = Receive.readTextFromNetwork id byteSource,
   Net.readHeader = Receive.readHeader $ Receive.readIntFromNetwork id byteSource,
   Net.writeBytes = Send.writeBytesToSink byteSink
 }
@@ -40,7 +43,10 @@ littleEndianCommunicators :: Net.IncomingByteSource -> Net.OutgoingByteSink -> N
 littleEndianCommunicators byteSource byteSink = Net.Communicators {
   Net.readInt = Receive.readIntFromNetwork LazyByteString.reverse byteSource,
   Net.readInts = Receive.readIntsFromNetwork LazyByteString.reverse byteSource,
-  Net.readText = Receive.readTextFromNetwork LazyByteString.reverse byteSource,
+  Net.readByte = Receive.readByteFromNetwork byteSource,
+  Net.readShort = Receive.readShortFromNetwork LazyByteString.reverse byteSource,
+  Net.readText = Receive.readNullTerminatedTextFromNetwork LazyByteString.reverse byteSource,
+  Net.readTextNoTerminator = Receive.readTextFromNetwork id byteSource,
   Net.readHeader = Receive.readHeader $ Receive.readIntFromNetwork LazyByteString.reverse byteSource,
   Net.writeBytes = Send.writeBytesToSink byteSink
 }

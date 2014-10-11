@@ -9,6 +9,7 @@ import Control.Concurrent
 
 import qualified FreePalace.Messages as Messages
 import qualified FreePalace.Messages.Outbound as Outbound
+import qualified FreePalace.Messages.Inbound as Inbound
 import qualified FreePalace.Net.Receive as Recv
 import qualified FreePalace.Net.Send as Send
 import qualified FreePalace.GUI.Types as GUI
@@ -72,17 +73,49 @@ dispatchIncomingMessage communicators gui =
     header <- Net.readHeader communicators
     Log.debugM "Incoming.Message.Header" (show header)
     case Messages.messageType header of
+      -- Logon sequence after handshake received and logon sent
+      Messages.AlternateLogonReply -> handleAlternateLogonReply communicators
+      Messages.ServerVersion -> handleServerVersion communicators header
+      Messages.ServerInfo -> handleServerInfo communicators header
+      -- End logon sequence
+      
       Messages.Talk -> handleTalk communicators gui header
       _ -> return ()
     dispatchIncomingMessage communicators gui
 
+{- OpenPalace comments say:
+  This is only sent when the server is running in "guests-are-members" mode.
+  This is pointless... it's basically echoing back the logon packetthat we sent to the server.
+  The only reason we support this is so that certain silly servers can change our puid and ask
+  us to reconnect "for security reasons."
+-}
+handleAlternateLogonReply :: Net.Communicators -> IO ()  -- TODO return puidCrc and puidCounter when we need it
+handleAlternateLogonReply communicators =
+  do
+    Inbound.readAlternateLogonReply communicators
+    return ()
+
+handleServerVersion :: Net.Communicators -> Messages.Header -> IO ()
+handleServerVersion communicators header =
+  do
+    Log.debugM "Incoming.Message.ServerVersion" ("Server version: " ++ (show $ Messages.messageRefNumber header))
+    return () -- TODO At some point probably something will need to happen here
+
+handleServerInfo :: Net.Communicators -> Messages.Header -> IO ()
+handleServerInfo communicators header =
+  do
+    (serverName, permissions) <- Inbound.readServerInfo communicators header --TODO probably need to do something with this server name
+    Log.debugM "Incoming.Message.ServerInfo" ("Server name: " ++ serverName)
+    return ()
+    
+    
 -- TODO room message if reference ID = 0
 handleTalk :: Net.Communicators -> GUI.Components -> Messages.Header -> IO ()
 handleTalk communicators gui header =
   do
     let userId = userIdFrom (Messages.messageRefNumber header)
     Log.debugM "Incoming.Message.Talk.User" (show userId)
-    message <- (Net.readText communicators) (Messages.messageSize header)
+    message <- Inbound.readTalk communicators header
     
     -- Chat string can't be > 254 characters long
     -- OpenPalace carries along original message but unclear why it's needed
@@ -97,7 +130,6 @@ handleTalk communicators gui header =
     -- TODO send talk and user (and message type) to chat balloon in GUI
     -- TODO send talk to script event handler when there is scripting
     return ()
-
 
 userIdFrom :: Int -> Messages.UserId
 userIdFrom refNumber =

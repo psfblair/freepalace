@@ -39,18 +39,20 @@ loginMessage translators userId =
       guestRegCodeCrc = 0x5905f923      -- TODO get this from Registration code if user is not a guest
       guestRegCodeCounter = 0xcf07309c  -- TODO get this from Registration code if user is not a guest
       userName = Messages.userName userId
-      userNameLength = min 63 $ length userName 
+      userNameLength = min 31 $ length userName -- TODO move this constraint to the UserId itself
+      -- TODO Wizard password goes in characters starting at 32
       paddedUserName = toWin1252ByteStringBuilder $ ensureLength 63 '\0' userName --TODO check that the last character can be non-null
       auxFlags = flagAuthenticate .|. flagPlatformTypeWin32
       puidCounter = 0xf5dc385e
-      puidCRC = 0xc144c580
+      puidCrc = 0xc144c580
       demoElapsed = 0  -- no longer used
       totalElapsed = 0 -- no longer used
       demoLimit = 0    -- no longer used
       desiredRoomId = 0 :: Word16 --  Later maybe get the initial desired room from somewhere
      
-      reserved = toWin1252ByteStringBuilder "FREEPL" -- The protocol spec lists these as reserved, and says nothing should be put in them.
+      reserved = toWin1252ByteStringBuilder "OPNPAL" -- The protocol spec lists these as reserved, and says nothing should be put in them.
                  -- However, the server records these 6 bytes in its log file.  So we'll exploit that to identify the client type.
+                 -- We have to pretend to be Open Palace because newer servers use this to identify the client
      
       uploadRequestedProtocolVersion = 0 -- ignored on server
       uploadCapabilities = uploadCapabilitiesAssetsPalace -- TODO This is a lie... for now (?)
@@ -65,7 +67,7 @@ loginMessage translators userId =
       builder =     (intsToBuilder       (msgTypeId : messageLength : referenceNumber : guestRegCodeCrc : guestRegCodeCounter : []))
                   .++ (toSingleByteBuilder userNameLength)
                   .++ paddedUserName
-                  .++ (intsToBuilder       (auxFlags : puidCounter : puidCRC : demoElapsed : totalElapsed : demoLimit : []))
+                  .++ (intsToBuilder       (auxFlags : puidCounter : puidCrc : demoElapsed : totalElapsed : demoLimit : []))
                   .++ (shortsToBuilder     (desiredRoomId : [])) 
                   .++ reserved
                   .++ (intsToBuilder       (uploadRequestedProtocolVersion : uploadCapabilities : downloadCapabilities : upload2DEngineCapabilities :
