@@ -107,7 +107,11 @@ wrapEntry :: Entry -> GUI.TextField
 wrapEntry entry =
   GUI.TextField {
     GUI.textValue = entryGetText entry,
-    GUI.clearTextEntry = entrySetText entry ""
+    GUI.clearTextEntry = entrySetText entry "",
+    GUI.onEnterKeyPress =
+      \handler -> do
+        onEntryActivate entry handler
+        return ()
   }
 
 wrapButton :: Button -> GUI.Button

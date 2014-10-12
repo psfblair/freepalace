@@ -35,7 +35,7 @@ bindUserTextEntry guiComponents userTextEntryHandler =
   do
     let chatEntryField = GUI.chatEntry guiComponents
         chatSendButton = GUI.chatSend guiComponents
-    -- GUI.onEnterKeyPress chatEntryField userTextEntryHandler -- TODO listen to on activate signal of text entry
+    GUI.onEnterKeyPress chatEntryField userTextEntryHandler
     GUI.onButtonClick chatSendButton userTextEntryHandler
 
 handleConnectRequested :: GUI.Components -> Net.Connectors -> Net.Hostname -> Net.PortId -> IO ()
