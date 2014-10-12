@@ -117,7 +117,7 @@ readMovement communicators userMap header =
     y <- fromIntegral <$> readShort
     x <- fromIntegral <$> readShort
     return Messages.Movement { Messages.x = x, Messages.y = y, Messages.userWhoMoved = mover }
-    
+
 readTalk :: Net.Communicators -> Map.Map Int Messages.UserId -> Messages.Header -> Messages.ChatMode -> IO Messages.Communication
 readTalk communicators userMap header mode =
   do
@@ -195,3 +195,9 @@ nextKey seed =
       pseudoRandomInt  = (truncate :: Double -> Int) $ pseudoRandomDouble * 256
       pseudoRandomWord8 = fromIntegral $ pseudoRandomInt .&. 0x000000FF
   in Just (pseudoRandomWord8, newSeed)
+
+readUnknown :: Net.Communicators -> Messages.Header -> IO ()
+readUnknown communicators header =
+  do
+    Net.readBytes communicators $ Messages.messageSize header
+    return ()

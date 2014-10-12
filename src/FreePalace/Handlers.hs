@@ -86,11 +86,11 @@ dispatchIncomingMessage communicators gui =
       -- End logon sequence
       
       Messages.Talk -> handleTalk gui communicators header Messages.TalkAloud
-      Messages.IncomingPlaintextWhisper -> handleTalk gui communicators header Messages.Whispering
+      Messages.CrossRoomWhisper -> handleTalk gui communicators header Messages.Whispering
       Messages.Say -> handleEncodedTalk gui communicators header Messages.TalkAloud
       Messages.Whisper -> handleEncodedTalk gui communicators header Messages.Whispering
       Messages.Move -> handleMovement gui communicators header
-      _ -> return ()
+      _ -> handleUnknownMessage communicators header
     dispatchIncomingMessage communicators gui
 
 {- OpenPalace comments say:
@@ -210,7 +210,10 @@ handleMovement gui communicators header =
     -- TODO tell the GUI to move the user
     -- TODO send action to script event handler when there is scripting?
     return ()
-  
+
+handleUnknownMessage :: Net.Communicators -> Messages.Header -> IO ()
+handleUnknownMessage communicators header = Inbound.readUnknown communicators header
+
 roomAnnouncementUserId = Messages.UserId { Messages.userRef = 0, Messages.userName = "Announcement" }
 refIdToUserIdMapping = Map.fromList [ (0, roomAnnouncementUserId) ]
 
