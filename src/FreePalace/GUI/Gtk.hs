@@ -106,7 +106,8 @@ wrapConnectDialog gui =
 wrapEntry :: Entry -> GUI.TextField
 wrapEntry entry =
   GUI.TextField {
-    GUI.textValue = entryGetText entry
+    GUI.textValue = entryGetText entry,
+    GUI.clearTextEntry = entrySetText entry ""
   }
 
 wrapButton :: Button -> GUI.Button

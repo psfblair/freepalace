@@ -35,7 +35,7 @@ bindUserTextEntry guiComponents userTextEntryHandler =
   do
     let chatEntryField = GUI.chatEntry guiComponents
         chatSendButton = GUI.chatSend guiComponents
---    GUI.onEnterKeyPress chatEntryField userTextEntryHandler -- TODO listen to on activate signal of text entry
+    -- GUI.onEnterKeyPress chatEntryField userTextEntryHandler -- TODO listen to on activate signal of text entry
     GUI.onButtonClick chatSendButton userTextEntryHandler
 
 handleConnectRequested :: GUI.Components -> Net.Connectors -> Net.Hostname -> Net.PortId -> IO ()
@@ -102,7 +102,7 @@ speak gui communicators translators userId =
           }
         chatMessage = Outbound.chatMessage translators communication
     sendBytes chatMessage
-    -- GUI.clear textEntryField -- TODO don't leave the text in there once it's sent!
+    GUI.clearTextEntry textEntryField
 
 
 -- TODO Handle connection loss

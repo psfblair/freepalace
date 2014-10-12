@@ -28,7 +28,9 @@ data Button = Button {
 }
 
 data TextField = TextField {
-  textValue :: IO String
+  textValue :: IO String,
+  clearTextEntry :: IO (),
+  onEnterKeyPress :: IO () -> IO ()
 }
                  
 data Components = Components {
