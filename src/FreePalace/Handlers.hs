@@ -2,10 +2,9 @@ module FreePalace.Handlers where
 
 import System.IO
 import qualified System.Log.Logger as Log
-
+import qualified Data.Map as Map
 import Control.Applicative
 import Control.Concurrent
-
 
 import qualified FreePalace.Messages as Messages
 import qualified FreePalace.Messages.Outbound as Outbound
@@ -77,9 +76,20 @@ dispatchIncomingMessage communicators gui =
       Messages.AlternateLogonReply -> handleAlternateLogonReply communicators
       Messages.ServerVersion -> handleServerVersion communicators header
       Messages.ServerInfo -> handleServerInfo communicators header
+      Messages.UserStatus -> handleUserStatus communicators header
+      Messages.UserLoggedOnAndMax -> handleUserLogonNotification communicators gui header
+      Messages.GotHttpServerLocation -> handleMediaServerInfo communicators header
+      Messages.GotRoomDescription -> handleRoomDescription communicators header
+      Messages.GotUserList -> handleUserList communicators header
+      Messages.RoomDescend -> return () -- this message just means we're done receiving the room description & user list
+      Messages.UserNew -> handleNewUserNotification communicators header
       -- End logon sequence
       
-      Messages.Talk -> handleTalk communicators gui header
+      Messages.Talk -> handleUnencryptedTalk gui communicators header Messages.TalkAloud
+      Messages.IncomingUnencryptedWhisper -> handleUnencryptedTalk gui communicators header Messages.Whispering
+      Messages.Say -> handleEncryptedTalk gui communicators header Messages.TalkAloud
+      Messages.Whisper -> handleEncryptedTalk gui communicators header Messages.Whispering
+      Messages.Move -> handleMovement gui communicators header
       _ -> return ()
     dispatchIncomingMessage communicators gui
 
@@ -105,33 +115,110 @@ handleServerInfo :: Net.Communicators -> Messages.Header -> IO ()
 handleServerInfo communicators header =
   do
     (serverName, permissions) <- Inbound.readServerInfo communicators header --TODO probably need to do something with this server name
-    Log.debugM "Incoming.Message.ServerInfo" ("Server name: " ++ serverName)
+    Log.debugM "Incoming.Message.ServerInfo" $ "Server name: " ++ serverName
     return ()
-    
-    
--- TODO room message if reference ID = 0
-handleTalk :: Net.Communicators -> GUI.Components -> Messages.Header -> IO ()
-handleTalk communicators gui header =
+
+handleUserStatus :: Net.Communicators -> Messages.Header -> IO () -- TODO probably need to do something with this info
+handleUserStatus communicators header =
   do
-    let userId = userIdFrom (Messages.messageRefNumber header)
-    Log.debugM "Incoming.Message.Talk.User" (show userId)
-    message <- Inbound.readTalk communicators header
-    
-    -- Chat string can't be > 254 characters long
-    -- OpenPalace carries along original message but unclear why it's needed
-    -- Even iptscrae shouldn't use what isn't displayed, no?
-    let truncated = take 254 message
-    Log.debugM "Incoming.Message.Talk.Text" (show truncated)
-    
-    -- TODO Handle different message types: whisper, room message? Or in a different handler?
-    -- OpenPalace carries along original message; seems to be passed off to iptscrae. Should it be?
-    GUI.appendMessage (GUI.logWindow gui) userId truncated
+    userFlags  <- Inbound.readUserStatus communicators header
+    Log.debugM "Incoming.Message.UserStatus" $ "User status -- User flags: " ++ (show userFlags)
+    return ()
+
+handleUserLogonNotification :: Net.Communicators -> GUI.Components -> Messages.Header -> IO ()
+handleUserLogonNotification communicators gui header =
+  do
+    (logonId, totalUserCount) <- Inbound.readUserLogonNotification communicators header
+    let message = "User " ++ (Messages.userName $ Messages.userIdFrom header refIdToUserIdMapping) ++ " just logged on."
+    Log.debugM  "Incoming.Message.UserLoggedOnAndMax" $  message ++ "  Population: " ++ (show totalUserCount)
+    GUI.appendMessage (GUI.logWindow gui) $ makeRoomAnnouncement message
+    return ()
+
+handleMediaServerInfo :: Net.Communicators -> Messages.Header -> IO ()
+handleMediaServerInfo communicators header =
+  do
+    serverInfo <- Inbound.readMediaServerInfo communicators header
+    Log.debugM "Incoming.Message.HttpServerLocation" $ "Media server: " ++ serverInfo
+    return ()
+
+handleRoomDescription :: Net.Communicators -> Messages.Header -> IO ()
+handleRoomDescription communicators header =
+  do
+    Inbound.readRoomDescription communicators header
+    Log.debugM "Incoming.Message.GotRoomDescription" $ "Received room description."
+    return ()
+  {- This is where the name, background image, hotspots, etc. come in. We'll do that later.
+     Also OpenPalace does this when receiving these messages:
+			currentRoom.clearStatusMessage();
+			palaceController.clearAlarms();
+			palaceController.midiStop();
+
+    and eventually emits a room change event for iptScrae
+  -}
+
+handleUserList :: Net.Communicators -> Messages.Header -> IO ()
+handleUserList communicators header =
+  do
+    Inbound.readUserList communicators header
+    Log.debugM "Incoming.Message.GotUserList" $ "Received user list."
+    return ()
+    {- OpenPalace does:
+         currentRoom.removeAllUsers();
+    -}
+
+handleNewUserNotification :: Net.Communicators -> Messages.Header -> IO ()
+handleNewUserNotification communicators header =
+  do
+    Inbound.readNewUserNotification communicators header
+    Log.debugM "Incoming.Message.UserNew" $ "Received new user notification."
+    return ()
+    {- OpenPalace does:
+         PalaceSoundPlayer.getInstance().playConnectionPing();
+         And if one's self entered:
+         if (needToRunSignonHandlers) {  palaceController.triggerHotspotEvents(IptEventHandler.TYPE_SIGNON);
+					 needToRunSignonHandlers = false; }
+         palaceController.triggerHotspotEvents(IptEventHandler.TYPE_ENTER);
+    -}
+
+handleUnencryptedTalk :: GUI.Components -> Net.Communicators -> Messages.Header -> Messages.ChatMode -> IO ()
+handleUnencryptedTalk gui communicators header mode =
+  do
+    chat <- Inbound.readTalk communicators refIdToUserIdMapping header mode
+    Log.debugM "Incoming.Message.UnencryptedTalk" (show chat)
+    GUI.appendMessage (GUI.logWindow gui) chat
 
     -- TODO send talk and user (and message type) to chat balloon in GUI
     -- TODO send talk to script event handler when there is scripting
     return ()
 
-userIdFrom :: Int -> Messages.UserId
-userIdFrom refNumber =
-   -- TODO Actually look up ID from some lookup table that we were sent from the server
-  Messages.UserId { Messages.userRef = refNumber , Messages.userName = show refNumber }
+handleEncryptedTalk :: GUI.Components -> Net.Communicators -> Messages.Header -> Messages.ChatMode -> IO ()
+handleEncryptedTalk gui communicators header mode =
+  do
+    chat <- Inbound.readEncryptedTalk communicators refIdToUserIdMapping header mode
+    Log.debugM "Incoming.Message.EncryptedTalk" (show chat)
+    GUI.appendMessage (GUI.logWindow gui) chat
+
+    -- TODO send talk and user (and message type) to chat balloon in GUI
+    -- TODO send talk to script event handler when there is scripting
+    return ()
+
+handleMovement :: GUI.Components -> Net.Communicators -> Messages.Header -> IO ()
+handleMovement gui communicators header = 
+  do
+    movement <- Inbound.readMovement communicators refIdToUserIdMapping header 
+    Log.debugM "Incoming.Message.EncryptedTalk" (show movement)
+    -- TODO tell the GUI to move the user
+    -- TODO send action to script event handler when there is scripting?
+    return ()
+  
+roomAnnouncementUserId = Messages.UserId { Messages.userRef = 0, Messages.userName = "Announcement" }
+refIdToUserIdMapping = Map.fromList [ (0, roomAnnouncementUserId) ]
+
+makeRoomAnnouncement :: String -> Messages.Communication
+makeRoomAnnouncement message =
+  Messages.Communication {
+    Messages.speaker = roomAnnouncementUserId,
+    Messages.target = Nothing,
+    Messages.message = message,
+    Messages.chatMode = Messages.Announcement
+  }

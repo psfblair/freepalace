@@ -132,10 +132,14 @@ wrapLogWindow gui =
   in GUI.LogWindow {
     GUI.showLogWindow = windowPresent logWin,
     GUI.closeLogWindow = widgetHide logWin,
-    GUI.appendMessage = \userId msg ->
+    GUI.appendMessage = \chat ->
                          do
-                           let user = Messages.userName userId
-                               stringToLog = user ++ ":\t" ++ msg
+                           -- TODO Handle different message types: whisper, room message, thought balloon, etc. using styled text
+                           -- TODO - ultimately want this in 2-column format, with message wrapping only in right-hand column
+                           -- TODO - want timestamp when we actually save the log, but not for display
+                           let user = Messages.userName $ Messages.speaker chat
+                               message = Messages.message chat
+                               stringToLog = user ++ ":\t" ++ message ++ "\n"
                            iter <- textBufferGetEndIter textBuffer
                            textBufferInsert textBuffer iter stringToLog
                            textViewScrollToIter textView iter 0.0 Nothing  

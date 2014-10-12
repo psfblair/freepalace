@@ -1,10 +1,10 @@
 module FreePalace.Messages where
 
 import System.IO
-import Data.Char
 import qualified Data.Text as Text
-import Data.Bits
 import qualified Data.Map as Map
+import Data.Bits
+import Data.Char
 import Control.Applicative
 
 data UserId = UserId { userRef :: Int, userName :: String } deriving Show -- TODO Limit to 31 characters
@@ -15,14 +15,26 @@ data Header = Header {
   messageRefNumber :: Int
 } deriving Show
 
+data Communication = Communication {
+  speaker :: UserId,
+  target :: Maybe UserId,
+  message :: String,
+  chatMode :: ChatMode
+} deriving Show
+
+data ChatMode = TalkAloud | Whispering | Thought | Exclamation | Announcement deriving Show
+
+data Movement = Movement { x :: Int, y :: Int, userWhoMoved :: UserId } deriving Show
+
 class Message msgType where
   messageTypeId :: msgType -> Int
 
 data MessageType =  -- Bidirectional messages
+                Say | Whisper |
+                Move | 
                 UserColor | UserFace | UserProp |
                 SpotState | DoorLock | DoorUnlock |
                 PropNew | PropMove | PropDelete |  -- loose props
-                Whisper |
                 Blowthru |
                 
                 -- Incoming messages
@@ -36,8 +48,7 @@ data MessageType =  -- Bidirectional messages
                 GotReplyOfAllRooms | GotReplyOfAllUsers |                     
                 RoomDescend | -- ?
                 Pinged |                   
-                XTalk | XWhisper | Talk  | -- Xtalk and Xwhisper are encrypted; Talk and Whisper unencrypted
-                Movement |
+                Talk | IncomingUnencryptedWhisper | -- Say and Whisper are encrypted; Talk and IncomingUnencryptedWhisper aren't
                 UserNew | UserDescription | UserRename | UserExitRoom | UserLeaving | -- UserLeaving ?
                 ConnectionDied |
                 IncomingFile | AssetIncoming | AssetQuery |
@@ -53,15 +64,16 @@ data MessageType =  -- Bidirectional messages
                 RequestRoomList | GotoRoom |
                 RequestUserList |                        
                 ChangeName |                        
-                Say | 
                 GlobalMsg | RoomMsg | SusrMsg |
-                Move | 
                 RequestAsset |                 
                 AssetRegi |                        
                 Draw 
             deriving (Enum, Bounded, Show)
 
 instance Message MessageType where  
+    messageTypeId Say = 2020895851
+    messageTypeId Whisper = 2021091699
+    messageTypeId Move = 1967943523    
     messageTypeId UserColor = 1970500163
     messageTypeId UserFace = 1970500166
     messageTypeId UserProp = 1970500176
@@ -71,7 +83,6 @@ instance Message MessageType where
     messageTypeId PropNew = 1850765936
     messageTypeId PropMove = 1833988720
     messageTypeId PropDelete = 1682993776
-    messageTypeId Whisper = 2003331443
     messageTypeId Blowthru = 1651273591
     
     messageTypeId LittleEndianServer = 1920559476 -- MSG_DIYIT highfirst = true
@@ -92,10 +103,9 @@ instance Message MessageType where
     messageTypeId GotReplyOfAllUsers = 1967944564    
     messageTypeId RoomDescend = 1701733490
     messageTypeId Pinged = 1885957735
-    messageTypeId XTalk = 2020895851
-    messageTypeId XWhisper = 2021091699
+
     messageTypeId Talk = 1952541803
-    messageTypeId Movement = 1967943523
+    messageTypeId IncomingUnencryptedWhisper = 0x77686973
     messageTypeId UserNew = 1852863091
     messageTypeId UserDescription = 1970500164
     messageTypeId UserRename = 1970500174
@@ -110,7 +120,6 @@ instance Message MessageType where
     messageTypeId DrawCmd = 1685217655
     messageTypeId NavError = 1933931122
     messageTypeId ServerDown = 1685026670
-    
     messageTypeId Logon = 0X72656769
     messageTypeId Authresponse = 0X61757472
     messageTypeId PingBack = 0X706F6E67
@@ -120,11 +129,10 @@ instance Message MessageType where
     messageTypeId GotoRoom = 0X6E617652
     messageTypeId RequestUserList = 0X754C7374
     messageTypeId ChangeName = 0X7573724E
-    messageTypeId Say = 0X78746C6B
+
     messageTypeId GlobalMsg = 0X676D7367
     messageTypeId RoomMsg = 0X726D7367
     messageTypeId SusrMsg = 0X736D7367
-    messageTypeId Move = 1967943523
     messageTypeId RequestAsset = 0X71417374
     messageTypeId AssetRegi = 0X72417374
     messageTypeId Draw = 0X64726177
@@ -140,5 +148,10 @@ idToMessageType messageTypeId =
 messageTypeToIdTypePair :: MessageType -> (Int, MessageType)
 messageTypeToIdTypePair msgType = (messageTypeId msgType, msgType)
 
+userIdFrom :: Header -> Map.Map Int UserId -> UserId
+userIdFrom header userMap =
+  let refNumber = messageRefNumber header
+      defaultUserId = UserId { userRef = refNumber , userName = "User #" ++ show refNumber }
+  in Map.findWithDefault defaultUserId refNumber userMap 
 
 

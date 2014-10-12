@@ -25,6 +25,7 @@ data Communicators = Communicators {
   readInt :: IO Int,
   readInts :: Int -> IO [Int],
   readByte :: IO Word8,
+  readBytes :: Int -> IO [Word8],
   readShort :: IO Word16,
   readHeader :: IO Messages.Header,
   readText :: Int -> IO String,

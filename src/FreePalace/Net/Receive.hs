@@ -31,15 +31,19 @@ readNullTerminatedTextFromNetwork endianConverter byteSource numberOfCharacters 
     chars <- readTextFromNetwork endianConverter byteSource numberOfCharacters
     return $ init chars   -- throw away last byte (null terminator)
   
--- Assume 2-byte Win-1252 characters. OpenPalace seems to let user select UTF-8 as well; not sure how that works.
+-- Assume Win-1252 characters. OpenPalace seems to let user select UTF-8 as well; not sure how that works.
 readTextFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -> Net.IncomingByteSource -> Int -> IO String
 readTextFromNetwork endianConverter byteSource numberOfCharacters =
-  sequence $ take numberOfCharacters $ repeat (readCharFromNetwork byteSource)
+  sequence $ take numberOfCharacters $ repeat $ readCharFromNetwork byteSource
     
 -- TODO Deal with IOErrors somewhere up the stack
 readIntsFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -> Net.IncomingByteSource -> Int -> IO [Int]
 readIntsFromNetwork endianConverter byteSource numberOfWords =
-  sequence $ take numberOfWords $ repeat (readIntFromNetwork endianConverter byteSource)
+  sequence $ take numberOfWords $ repeat $ readIntFromNetwork endianConverter byteSource
+
+readBytesFromNetwork :: Net.IncomingByteSource -> Int -> IO [Word8]
+readBytesFromNetwork byteSource numberOfBytes =
+  sequence $ take numberOfBytes $ repeat $ readByteFromNetwork byteSource
 
 {- IMPLEMENTATION-SPECIFIC -}
 -- TODO FIX MAKE THIS USE getWord32le or be depending on endianness, and pass that in

@@ -15,7 +15,7 @@ data MainWindow = MainWindow {
 data LogWindow = LogWindow {
   showLogWindow :: IO (),
   closeLogWindow :: IO (),
-  appendMessage :: Messages.UserId -> String -> IO ()
+  appendMessage :: Messages.Communication -> IO ()
 }
 
 data Dialog = Dialog {
