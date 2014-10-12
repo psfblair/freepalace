@@ -137,9 +137,8 @@ readTalk communicators userMap header mode =
       Messages.chatMode = chatMode
     }
  
--- TODO Should this deal with more than XWhisper? If so don't hard-code message style
-readEncryptedTalk :: Net.Communicators -> Map.Map Int Messages.UserId -> Messages.Header -> Messages.ChatMode -> IO Messages.Communication
-readEncryptedTalk communicators userMap header mode =
+readEncodedTalk :: Net.Communicators -> Map.Map Int Messages.UserId -> Messages.Header -> Messages.ChatMode -> IO Messages.Communication
+readEncodedTalk communicators userMap header mode =
   -- header messageSize field is actually the message checksum + 1 ??
   do
     let readShort = Net.readShort communicators
@@ -166,7 +165,7 @@ truncateChatMessage message = take 254 message
     
 illuminate :: [Word8] -> String
 illuminate obfuscated =
-  let reversed = obfuscated -- reverse obfuscated
+  let reversed = reverse obfuscated
       initialPartiallyObfuscatedByte = 0
       illuminated = illuminateRecursive obfuscationKeys initialPartiallyObfuscatedByte [] reversed
   in map Convert.convert illuminated
@@ -175,17 +174,16 @@ illuminate obfuscated =
 -- so we don't have to reverse it again.
 illuminateRecursive :: [Word8] -> Word8 -> [Word8] -> [Word8] -> [Word8]
 illuminateRecursive _ _ accumulated [] = accumulated
-illuminateRecursive (key1:key2:remainingKeys) previousPartiallyObfuscatedByte obfuscatedSoFar (byteToObfuscate:remainingBytes)  =
-  let obfuscatedByte = byteToObfuscate `xor` key1 `xor` previousPartiallyObfuscatedByte
-      partiallyObfuscatedByte = byteToObfuscate `xor` key2
-      newResults = obfuscatedByte : obfuscatedSoFar
-  in illuminateRecursive remainingKeys partiallyObfuscatedByte newResults remainingBytes 
+illuminateRecursive (key1:key2:remainingKeys) previousPartiallyIlluminatedByte illuminatedSoFar (byteToIlluminate:remainingBytes)  =
+  let illuminatedByte = byteToIlluminate `xor` key1 `xor` previousPartiallyIlluminatedByte
+      partiallyIlluminatedByte = byteToIlluminate `xor` key2
+      newResults = illuminatedByte : illuminatedSoFar
+  in illuminateRecursive remainingKeys partiallyIlluminatedByte newResults remainingBytes 
 illuminateRecursive _ _ accumulated _ = accumulated  -- Should never get here but if we do we'll provide what we have so far
 
 -- An array of 512 bizarrely-concocted Word16s truncated to Word8s
--- We reverse it because the algorithm works from the right of the string to be obfuscated/illuminated
 obfuscationKeys :: [Word8]
-obfuscationKeys = reverse . take 512 $ List.unfoldr nextKey 666666
+obfuscationKeys = take 512 $ List.unfoldr nextKey 666666
 
 nextKey :: Int -> Maybe (Word8, Int)
 nextKey seed =

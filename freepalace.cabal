@@ -20,10 +20,23 @@ executable freepalace
   main-is:             Main.hs
   other-modules:       
   -- other-extensions:    
-  build-depends:       base >=4.7 && <4.8,
-                       containers, gtk, 
-                       network, bytestring, text, binary, encoding, convertible,
-                       hslogger
+  build-depends:       base >=4.7 && <4.8
+                     , containers, gtk
+                     , network, bytestring, text, binary, encoding, convertible
+                     , hslogger
   hs-source-dirs:      src
   default-language:    Haskell2010
 
+test-suite freepalace-test
+  type: exitcode-stdio-1.0
+  hs-source-dirs: spec, src
+  main-is: Spec.hs
+  build-depends:       base >=4.7 && <4.8
+
+                     -- Copied from the main build
+                     , containers, gtk
+                     , network, bytestring, text, binary, encoding, convertible
+                     , hslogger
+
+                     , hspec2
+  default-language:    Haskell2010

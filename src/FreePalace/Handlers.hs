@@ -85,10 +85,10 @@ dispatchIncomingMessage communicators gui =
       Messages.UserNew -> handleNewUserNotification communicators header
       -- End logon sequence
       
-      Messages.Talk -> handleUnencryptedTalk gui communicators header Messages.TalkAloud
-      Messages.IncomingUnencryptedWhisper -> handleUnencryptedTalk gui communicators header Messages.Whispering
-      Messages.Say -> handleEncryptedTalk gui communicators header Messages.TalkAloud
-      Messages.Whisper -> handleEncryptedTalk gui communicators header Messages.Whispering
+      Messages.Talk -> handleTalk gui communicators header Messages.TalkAloud
+      Messages.IncomingPlaintextWhisper -> handleTalk gui communicators header Messages.Whispering
+      Messages.Say -> handleEncodedTalk gui communicators header Messages.TalkAloud
+      Messages.Whisper -> handleEncodedTalk gui communicators header Messages.Whispering
       Messages.Move -> handleMovement gui communicators header
       _ -> return ()
     dispatchIncomingMessage communicators gui
@@ -180,8 +180,8 @@ handleNewUserNotification communicators header =
          palaceController.triggerHotspotEvents(IptEventHandler.TYPE_ENTER);
     -}
 
-handleUnencryptedTalk :: GUI.Components -> Net.Communicators -> Messages.Header -> Messages.ChatMode -> IO ()
-handleUnencryptedTalk gui communicators header mode =
+handleTalk :: GUI.Components -> Net.Communicators -> Messages.Header -> Messages.ChatMode -> IO ()
+handleTalk gui communicators header mode =
   do
     chat <- Inbound.readTalk communicators refIdToUserIdMapping header mode
     Log.debugM "Incoming.Message.UnencryptedTalk" (show chat)
@@ -191,10 +191,10 @@ handleUnencryptedTalk gui communicators header mode =
     -- TODO send talk to script event handler when there is scripting
     return ()
 
-handleEncryptedTalk :: GUI.Components -> Net.Communicators -> Messages.Header -> Messages.ChatMode -> IO ()
-handleEncryptedTalk gui communicators header mode =
+handleEncodedTalk :: GUI.Components -> Net.Communicators -> Messages.Header -> Messages.ChatMode -> IO ()
+handleEncodedTalk gui communicators header mode =
   do
-    chat <- Inbound.readEncryptedTalk communicators refIdToUserIdMapping header mode
+    chat <- Inbound.readEncodedTalk communicators refIdToUserIdMapping header mode
     Log.debugM "Incoming.Message.EncryptedTalk" (show chat)
     GUI.appendMessage (GUI.logWindow gui) chat
 

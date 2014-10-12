@@ -48,7 +48,7 @@ data MessageType =  -- Bidirectional messages
                 GotReplyOfAllRooms | GotReplyOfAllUsers |                     
                 RoomDescend | -- ?
                 Pinged |                   
-                Talk | IncomingUnencryptedWhisper | -- Say and Whisper are encrypted; Talk and IncomingUnencryptedWhisper aren't
+                Talk | IncomingPlaintextWhisper | -- Say and Whisper are encrypted; Talk and IncomingPlaintextWhisper aren't
                 UserNew | UserDescription | UserRename | UserExitRoom | UserLeaving | -- UserLeaving ?
                 ConnectionDied |
                 IncomingFile | AssetIncoming | AssetQuery |
@@ -105,7 +105,7 @@ instance Message MessageType where
     messageTypeId Pinged = 1885957735
 
     messageTypeId Talk = 1952541803
-    messageTypeId IncomingUnencryptedWhisper = 0x77686973
+    messageTypeId IncomingPlaintextWhisper = 0x77686973
     messageTypeId UserNew = 1852863091
     messageTypeId UserDescription = 1970500164
     messageTypeId UserRename = 1970500174
