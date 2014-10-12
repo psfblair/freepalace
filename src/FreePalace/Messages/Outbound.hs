@@ -13,6 +13,7 @@ import Data.Monoid
 import Control.Applicative
 
 import qualified FreePalace.Messages as Messages
+import qualified FreePalace.Messages.Obfuscate as Obfuscate
 import FreePalace.Net.Types as Net
 import FreePalace.Net.Utils
 
@@ -74,6 +75,38 @@ loginMessage translators userId =
                                             upload2dGraphicsCapabilities : upload3DEngineCapabilities : []))
 
   in Builder.toLazyByteString builder
+
+chatMessage :: Net.Translators -> Messages.Communication -> LazyByteString.ByteString
+chatMessage translators communication =
+  do
+    let intsToBuilder = intsToByteStringBuilder translators
+        shortsToBuilder = shortsToByteStringBuilder translators
+        
+        encoded = Obfuscate.obfuscate $ Messages.message communication
+        messageLength = fromIntegral $ LazyByteString.length encoded
+        userRefId = Messages.userRef $ Messages.speaker communication
+        header = case Messages.target communication of
+          Just target -> whisperHeader messageLength userRefId target
+          Nothing -> talkHeader messageLength userRefId
+          
+        payloadLength = fromIntegral messageLength + 3 -- terminator plus two bytes for the length
+        terminatedMessagePayload = LazyByteString.append encoded (LazyByteString.cons 0 LazyByteString.empty)
+        leader = Builder.toLazyByteString $ (intsToBuilder header) .++ (shortsToBuilder [payloadLength])
+      in LazyByteString.append leader terminatedMessagePayload
+    
+talkHeader :: Int -> Int-> [Int]
+talkHeader messageLength userRefId  =
+  let totalLength = messageLength + 3
+      messageType = Messages.messageTypeId Messages.Say
+  in messageType : totalLength : userRefId : []
+
+-- This is actually a header plus a field for the target
+whisperHeader :: Int -> Int -> Messages.UserId -> [Int]
+whisperHeader messageLength userRefId target =
+  let totalLength = messageLength + 7
+      messageType = Messages.messageTypeId Messages.Whisper
+      targetRefId = Messages.userRef target
+  in messageType : totalLength : userRefId : targetRefId : []
 
 
 toIntByteStringBuilder :: (Int32 -> Builder.Builder) -> [Int] -> Builder.Builder

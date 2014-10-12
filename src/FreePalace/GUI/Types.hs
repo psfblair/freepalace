@@ -40,5 +40,8 @@ data Components = Components {
   connectOk :: Button,
   connectCancel :: Button,
 
-  logWindow :: LogWindow
+  logWindow :: LogWindow,
+
+  chatEntry :: TextField,
+  chatSend :: Button
 }

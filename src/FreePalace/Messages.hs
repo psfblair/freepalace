@@ -22,7 +22,7 @@ data Communication = Communication {
   chatMode :: ChatMode
 } deriving Show
 
-data ChatMode = TalkAloud | Whispering | Thought | Exclamation | Announcement deriving Show
+data ChatMode = TalkAloud | Whispering | Thought | Exclamation | Announcement | Outbound deriving Show
 
 data Movement = Movement { x :: Int, y :: Int, userWhoMoved :: UserId } deriving Show
 

@@ -2,14 +2,11 @@ module FreePalace.Messages.Inbound where
 
 import Control.Applicative
 import qualified Data.Map as Map
-import qualified Data.List as List
 import Data.Word
-import Data.Bits
-import qualified Data.Convertible.Base as Convert
-import Data.Convertible.Instances.Num
 
 import FreePalace.Net.Types as Net
 import FreePalace.Messages as Messages
+import qualified FreePalace.Messages.Obfuscate as Illuminator
 
 readAlternateLogonReply :: Net.Communicators -> IO (Int, Int)
 readAlternateLogonReply communicators  =
@@ -148,7 +145,7 @@ readEncodedTalk communicators userMap header mode =
     length <- fromIntegral <$> readShort -- This is apparently the total length including these two bytes and the terminator
     let messageLength = length - 2
     obfuscated <- truncateChatMessage <$> init <$> readBytes messageLength
-    let message = illuminate obfuscated
+    let message = Illuminator.illuminate obfuscated
         
     return Messages.Communication {
       Messages.speaker = speaking,
@@ -162,39 +159,6 @@ readEncodedTalk communicators userMap header mode =
 -- Even iptscrae shouldn't use what isn't displayed, no?
 truncateChatMessage :: [a] -> [a]
 truncateChatMessage message = take 254 message
-    
-illuminate :: [Word8] -> String
-illuminate obfuscated =
-  let reversed = reverse obfuscated
-      initialPartiallyObfuscatedByte = 0
-      illuminated = illuminateRecursive obfuscationKeys initialPartiallyObfuscatedByte [] reversed
-  in map Convert.convert illuminated
-
--- We use an accumulator, which gives the result the reverse order of what was passed in
--- so we don't have to reverse it again.
-illuminateRecursive :: [Word8] -> Word8 -> [Word8] -> [Word8] -> [Word8]
-illuminateRecursive _ _ accumulated [] = accumulated
-illuminateRecursive (key1:key2:remainingKeys) previousPartiallyIlluminatedByte illuminatedSoFar (byteToIlluminate:remainingBytes)  =
-  let illuminatedByte = byteToIlluminate `xor` key1 `xor` previousPartiallyIlluminatedByte
-      partiallyIlluminatedByte = byteToIlluminate `xor` key2
-      newResults = illuminatedByte : illuminatedSoFar
-  in illuminateRecursive remainingKeys partiallyIlluminatedByte newResults remainingBytes 
-illuminateRecursive _ _ accumulated _ = accumulated  -- Should never get here but if we do we'll provide what we have so far
-
--- An array of 512 bizarrely-concocted Word16s truncated to Word8s
-obfuscationKeys :: [Word8]
-obfuscationKeys = take 512 $ List.unfoldr nextKey 666666
-
-nextKey :: Int -> Maybe (Word8, Int)
-nextKey seed =
-  let quotient = seed `quot` 127773
-      remainder = seed  `rem` 127773
-      possibleNewSeed = (16807 * remainder) - (2836 * quotient)
-      newSeed = if possibleNewSeed > 0 then possibleNewSeed else possibleNewSeed + 0x7fffffff
-      pseudoRandomDouble = (fromIntegral newSeed) / 2147483647.0
-      pseudoRandomInt  = (truncate :: Double -> Int) $ pseudoRandomDouble * 256
-      pseudoRandomWord8 = fromIntegral $ pseudoRandomInt .&. 0x000000FF
-  in Just (pseudoRandomWord8, newSeed)
 
 readUnknown :: Net.Communicators -> Messages.Header -> IO ()
 readUnknown communicators header =

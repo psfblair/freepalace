@@ -21,7 +21,10 @@ data GtkGui = GtkGui {
 
   logWindow :: Window,
   logTextView :: TextView,
-  logTextBuffer :: TextBuffer
+  logTextBuffer :: TextBuffer,
+
+  chatEntry :: Entry,
+  chatButton :: Button
 }
 
 
@@ -54,9 +57,13 @@ loadGladeComponents gladepath =
     logTextView <- builderGetObject builder castToTextView "logTextView"
     logTextBuffer <- builderGetObject builder castToTextBuffer "logTextBuffer"
 
+    chatEntry <- builderGetObject builder castToEntry "chatEntry"
+    chatButton <- builderGetObject builder castToButton "chatButton"
+    
     return $ GtkGui mainWindow
       connectDialog connectHostEntry connectPortEntry connectOkButton connectCancelButton
       logWindow logTextView logTextBuffer
+      chatEntry chatButton
 
 wrapComponents :: GtkGui -> GUI.Components
 wrapComponents gui =
@@ -64,12 +71,15 @@ wrapComponents gui =
     GUI.mainWindow = wrapMainWindow gui,
     
     GUI.connectDialog = wrapConnectDialog gui,
-    GUI.connectHostEntry = wrapConnectHostEntry gui,
-    GUI.connectPortEntry = wrapConnectPortEntry gui,
-    GUI.connectOk = wrapConnectOkButton gui,
-    GUI.connectCancel = wrapConnectCancelButton gui,
+    GUI.connectHostEntry = wrapEntry $ connectHostEntry gui,
+    GUI.connectPortEntry = wrapEntry $ connectPortEntry gui,
+    GUI.connectOk = wrapButton $ connectOk gui,
+    GUI.connectCancel = wrapButton $ connectCancel gui,
 
-    GUI.logWindow = wrapLogWindow gui
+    GUI.logWindow = wrapLogWindow gui,
+
+    GUI.chatEntry = wrapEntry $ chatEntry gui,
+    GUI.chatSend = wrapButton $ chatButton gui
   }
 
 wrapMainWindow :: GtkGui -> GUI.MainWindow
@@ -93,27 +103,11 @@ wrapConnectDialog gui =
     GUI.closeDialog = widgetHide dialog
   }
 
-wrapConnectHostEntry :: GtkGui -> GUI.TextField
-wrapConnectHostEntry gui =
-  wrapEntry $ connectHostEntry gui
-
-wrapConnectPortEntry :: GtkGui -> GUI.TextField
-wrapConnectPortEntry gui =
-  wrapEntry $ connectPortEntry gui
-
 wrapEntry :: Entry -> GUI.TextField
 wrapEntry entry =
   GUI.TextField {
     GUI.textValue = entryGetText entry
   }
-
-wrapConnectOkButton :: GtkGui -> GUI.Button
-wrapConnectOkButton gui =
-  wrapButton $ connectOk gui
-
-wrapConnectCancelButton :: GtkGui -> GUI.Button
-wrapConnectCancelButton gui =
-  wrapButton $ connectCancel gui
 
 wrapButton :: Button -> GUI.Button
 wrapButton button = 

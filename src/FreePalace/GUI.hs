@@ -38,5 +38,3 @@ setUpConnectDialog guiComponents connectHandler =
 showConnectDialog :: Components -> IO ()
 showConnectDialog guiComponents = showDialog $ connectDialog guiComponents
 
-addHandlersToGUI :: Components -> Handlers.GUIEventHandlers -> IO ()
-addHandlersToGUI guiComponents guiEventHandlers = return ()

@@ -1,8 +1,9 @@
-module FreePalace.Messages.InboundSpec (spec) where
+module FreePalace.Messages.ObfuscateSpec (spec) where
 
+import qualified Data.ByteString.Lazy as LazyByteString
 import Test.Hspec
 
-import FreePalace.Messages.Inbound
+import FreePalace.Messages.Obfuscate
 
 spec :: Spec
 spec = do
@@ -78,3 +79,24 @@ spec = do
           illuminated = illuminateRecursive obfuscationKeys initialPartiallyObfuscatedByte [] reversed
       illuminated `shouldBe` [ 0x31, 0x33 ]
       
+
+  describe "obfuscate" $ do
+    it "produces the right obfuscated bytes for a string of length 1" $ do
+      let plaintext = "X"
+          encodedText =  LazyByteString.pack [0x6F]
+      obfuscate plaintext `shouldBe` encodedText
+
+    it "produces the right obfuscated bytes for a string of length 2" $ do
+      let plaintext = "13"
+          encodedText =  LazyByteString.pack [ 0x90, 0x04 ]
+      obfuscate plaintext `shouldBe` encodedText
+
+    it "produces the right obfuscated bytes for a longer string" $ do
+      let plaintext = "The quick brown fox jumped over the lazy dog."
+          encodedText = LazyByteString.pack [
+            0x59, 0x18, 0x9B, 0x94, 0x15, 0xEE, 0x7B, 0x78, 0x8C, 0x66, 0x23, 0xFB, 0x82, 0x47,
+            0x3E, 0x08, 0xE5, 0xAA, 0x71, 0xAE, 0x2A, 0x1F, 0x3A, 0xA7, 0x17, 0xC0, 0x6E, 0x48,
+            0x19, 0x97, 0xED, 0xB6, 0xCB, 0x6D, 0xB2, 0x11, 0x02, 0x0C, 0x6C, 0x7D, 0x36, 0xC1,
+            0x0B, 0xDB, 0x19
+            ]
+      obfuscate plaintext `shouldBe` encodedText

@@ -16,12 +16,27 @@ import qualified FreePalace.Net as Netcom
 import qualified FreePalace.Net.Types as Net
 
 data GUIEventHandlers = GUIEventHandlers {
-
+  handleUserTextEntry :: IO ()
 }
 
-guiEventHandlers = GUIEventHandlers {
-
+guiEventHandlers :: GUI.Components -> Net.Communicators -> Net.Translators -> Messages.UserId -> GUIEventHandlers
+guiEventHandlers gui communicators translators userId = GUIEventHandlers {
+  handleUserTextEntry = speak gui communicators translators userId
 }
+
+bindHandlers :: GUI.Components -> GUIEventHandlers -> IO ()
+bindHandlers guiComponents guiEventHandlers =
+  do
+    bindUserTextEntry guiComponents $ handleUserTextEntry guiEventHandlers
+    return ()
+
+bindUserTextEntry :: GUI.Components -> IO () -> IO ()
+bindUserTextEntry guiComponents userTextEntryHandler =
+  do
+    let chatEntryField = GUI.chatEntry guiComponents
+        chatSendButton = GUI.chatSend guiComponents
+--    GUI.onEnterKeyPress chatEntryField userTextEntryHandler -- TODO listen to on activate signal of text entry
+    GUI.onButtonClick chatSendButton userTextEntryHandler
 
 handleConnectRequested :: GUI.Components -> Net.Connectors -> Net.Hostname -> Net.PortId -> IO ()
 handleConnectRequested gui connectors host portString =
@@ -32,28 +47,31 @@ handleConnectRequested gui connectors host portString =
     handshake <- handleHandshake channels    -- Now in STATE_HANDSHAKING
     case handshake of
       Left msg -> return () -- TODO Provide some way to indicate connection failed. Don't close the connection window.
-      Right (communicators, translators) ->  -- Now in STATE_READY 
+      Right (communicators, translators, userRefId) ->  -- Now in STATE_READY 
         do
           -- TODO Allow user to set user name
-          sendLogin communicators translators $ Messages.UserId { Messages.userRef = 5, Messages.userName = "Haskell Curry"}  -- TODO Also could raise IO Error
+          let user = Messages.UserId { Messages.userRef = userRefId, Messages.userName = "Haskell Curry"}
+          sendLogin communicators translators user   -- TODO Also could raise IO Error
           messageListenerThreadId <- forkIO $ dispatchIncomingMessage communicators gui
-          -- TODO bind GUIEventHandlers to communicators
+          bindHandlers gui $ guiEventHandlers gui communicators translators user  -- TODO allow rebinding if user name changes
           -- TODO Must bind disconnect and reconnect to something that will stop the forked process (Control.Concurrent -  killThread :: ThreadId -> IO () )
           GUI.closeDialog $ GUI.connectDialog gui
 
 -- TODO Time out if this takes too long
 -- TODO Use IOError instead of Either? Or at least don't wrap strings in Either
-handleHandshake :: Net.Channels -> IO (Either String (Net.Communicators, Net.Translators))
+handleHandshake :: Net.Channels -> IO (Either String (Net.Communicators, Net.Translators, Int))
 handleHandshake channels =
   do
     let byteSource = Net.source channels
     let byteSink = Net.sink channels
     let bigEndianCommunicators =  Netcom.bigEndianCommunicators byteSource byteSink -- default to big endian
-    msgType <- Messages.messageType <$> (Net.readHeader bigEndianCommunicators)
+    header <- Net.readHeader bigEndianCommunicators
+    let msgType = Messages.messageType header
+        userRefId = Messages.messageRefNumber header
     Log.debugM "Incoming.Handshake" (show msgType)
     case msgType of
-      Messages.BigEndianServer    ->  return $ Right (bigEndianCommunicators, Outbound.bigEndianTranslators)
-      Messages.LittleEndianServer ->  return $ Right (Netcom.littleEndianCommunicators byteSource byteSink, Outbound.littleEndianTranslators)
+      Messages.BigEndianServer    ->  return $ Right (bigEndianCommunicators, Outbound.bigEndianTranslators, userRefId)
+      Messages.LittleEndianServer ->  return $ Right (Netcom.littleEndianCommunicators byteSource byteSink, Outbound.littleEndianTranslators, userRefId)
       Messages.UnknownServer      ->  return $ Left "Unknown server type"
       _                           ->  return $ Left "Unknown server type"
 
@@ -61,8 +79,30 @@ sendLogin :: Net.Communicators -> Net.Translators -> Messages.UserId -> IO ()
 sendLogin communicators translators userId =
   do
     let sendBytes = Net.writeBytes communicators
-    let loginMessageBytes = Outbound.loginMessage translators userId
+        loginMessageBytes = Outbound.loginMessage translators userId
     sendBytes loginMessageBytes
+
+-- TODO The handler has to see if 1) it's connected, 2) it's a client command, 3) it's a script call, 4) a user is selected (for whisper)
+-- TODO ultimately for this to be able to allow the user to change name mid-stream, this needs to take a way to get the latest name from
+--      the user mapping
+speak :: GUI.Components -> Net.Communicators -> Net.Translators -> Messages.UserId -> IO ()
+speak gui communicators translators userId =
+  do
+    let sendBytes = Net.writeBytes communicators
+        textEntryField = GUI.chatEntry gui
+        selectedUser = Nothing -- TODO - get selected user from ... ?
+    messageText <- GUI.textValue textEntryField
+    
+    -- TODO check the initial character of the message for instructions
+    let communication = Messages.Communication {
+          Messages.speaker = userId,
+          Messages.target = selectedUser,
+          Messages.message = messageText,
+          Messages.chatMode = Messages.Outbound
+          }
+        chatMessage = Outbound.chatMessage translators communication
+    sendBytes chatMessage
+    -- GUI.clear textEntryField -- TODO don't leave the text in there once it's sent!
 
 
 -- TODO Handle connection loss
