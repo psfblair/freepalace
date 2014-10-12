@@ -101,6 +101,7 @@ speak gui communicators translators userId =
           Messages.chatMode = Messages.Outbound
           }
         chatMessage = Outbound.chatMessage translators communication
+    Log.debugM "Outgoing.Talk" (show communication)
     sendBytes chatMessage
     GUI.clearTextEntry textEntryField
 
