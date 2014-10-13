@@ -3,6 +3,34 @@
   <requires lib="gtk+" version="2.24"/>
   <!-- interface-naming-policy project-wide -->
   <object class="GtkTextBuffer" id="logTextBuffer"/>
+  <object class="GtkWindow" id="logWindow">
+    <property name="visible">True</property>
+    <property name="sensitive">False</property>
+    <property name="can_focus">False</property>
+    <property name="title" translatable="yes">Log</property>
+    <property name="window_position">center</property>
+    <property name="default_width">800</property>
+    <property name="default_height">100</property>
+    <property name="accept_focus">False</property>
+    <property name="gravity">center</property>
+    <child>
+      <object class="GtkScrolledWindow" id="scrolledwindow1">
+        <property name="visible">True</property>
+        <property name="can_focus">True</property>
+        <property name="hscrollbar_policy">automatic</property>
+        <property name="vscrollbar_policy">automatic</property>
+        <child>
+          <object class="GtkTextView" id="logTextView">
+            <property name="visible">True</property>
+            <property name="can_focus">True</property>
+            <property name="editable">False</property>
+            <property name="wrap_mode">word</property>
+            <property name="buffer">logTextBuffer</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
   <object class="GtkWindow" id="mainWindow">
     <property name="visible">True</property>
     <property name="can_focus">False</property>
@@ -10,6 +38,7 @@
     <property name="window_position">center</property>
     <property name="default_width">800</property>
     <property name="default_height">600</property>
+    <property name="gravity">center</property>
     <child>
       <object class="GtkVBox" id="vbox1">
         <property name="visible">True</property>
@@ -537,33 +566,5 @@
       <action-widget response="0">connectOk</action-widget>
       <action-widget response="0">connectCancel</action-widget>
     </action-widgets>
-  </object>
-  <object class="GtkWindow" id="logWindow">
-    <property name="visible">True</property>
-    <property name="sensitive">False</property>
-    <property name="can_focus">False</property>
-    <property name="title" translatable="yes">Log</property>
-    <property name="default_width">800</property>
-    <property name="default_height">100</property>
-    <property name="destroy_with_parent">True</property>
-    <property name="accept_focus">False</property>
-    <property name="transient_for">mainWindow</property>
-    <child>
-      <object class="GtkScrolledWindow" id="scrolledwindow1">
-        <property name="visible">True</property>
-        <property name="can_focus">True</property>
-        <property name="hscrollbar_policy">automatic</property>
-        <property name="vscrollbar_policy">automatic</property>
-        <child>
-          <object class="GtkTextView" id="logTextView">
-            <property name="visible">True</property>
-            <property name="can_focus">True</property>
-            <property name="editable">False</property>
-            <property name="wrap_mode">word</property>
-            <property name="buffer">logTextBuffer</property>
-          </object>
-        </child>
-      </object>
-    </child>
   </object>
 </interface>

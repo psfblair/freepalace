@@ -46,7 +46,7 @@ loadGladeComponents gladepath =
     builderAddFromFile builder gladepath
 
     mainWindow <- builderGetObject builder castToWindow "mainWindow"
-
+    windowMove mainWindow 322 50
     connectDialog <- builderGetObject builder castToDialog "connectDialog"
     connectHostEntry <- builderGetObject builder castToEntry "hostEntry"
     connectPortEntry <- builderGetObject builder castToEntry "portEntry"
@@ -54,7 +54,9 @@ loadGladeComponents gladepath =
     connectCancelButton <- builderGetObject builder castToButton "connectCancel"
 
     logWindow <- builderGetObject builder castToWindow "logWindow"
+    windowMove logWindow 322 671
     logTextView <- builderGetObject builder castToTextView "logTextView"
+    widgetModifyBg logTextView StateNormal (Color 0xFFFF 0xFFFF 0xFFFF)
     logTextBuffer <- builderGetObject builder castToTextBuffer "logTextBuffer"
 
     chatEntry <- builderGetObject builder castToEntry "chatEntry"
