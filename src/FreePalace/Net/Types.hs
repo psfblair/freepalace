@@ -17,24 +17,26 @@ data OutgoingByteSink   = SocketByteSink   Socket.Socket
 data Channels = Channels { source :: IncomingByteSource, sink :: OutgoingByteSink }
 
 data Connectors = Connectors {
-  connect :: Hostname -> PortId -> IO Channels,
-  disconnect :: IncomingByteSource -> IO ()
+    connect :: Hostname -> PortId -> IO Channels
+  , disconnect :: IncomingByteSource -> IO ()
 }
 
 data Communicators = Communicators {
-  readInt :: IO Int,
-  readInts :: Int -> IO [Int],
-  readByte :: IO Word8,
-  readBytes :: Int -> IO [Word8],
-  readShort :: IO Word16,
-  readHeader :: IO Messages.Header,
-  readText :: Int -> IO String,
-  readTextNoTerminator :: Int -> IO String,
-  writeBytes :: LazyByteString.ByteString -> IO ()
+    readInt :: IO Int
+  , readInts :: Int -> IO [Int]
+  , readByte :: IO Word8
+  , readBytes :: Int -> IO [Word8]
+  , readShort :: IO Word16
+  , readHeader :: IO Messages.Header
+  , readText :: Int -> IO String
+  , readTextNoTerminator :: Int -> IO String
+  , writeBytes :: LazyByteString.ByteString -> IO ()
 }
 
 data Translators = Translators {
-  intsToByteStringBuilder :: [Int] -> Builder.Builder,
-  shortsToByteStringBuilder :: [Word16] -> Builder.Builder
+    intsToByteStringBuilder :: [Int] -> Builder.Builder
+  , shortsToByteStringBuilder :: [Word16] -> Builder.Builder
+  , toWin1252ByteStringBuilder  :: String -> Builder.Builder
+  , toSingleByteBuilder :: Int -> Builder.Builder
 }
 

@@ -70,8 +70,8 @@ handleHandshake channels =
         userRefId = Messages.messageRefNumber header
     Log.debugM "Incoming.Handshake" (show msgType)
     case msgType of
-      Messages.BigEndianServer    ->  return $ Right (bigEndianCommunicators, Outbound.bigEndianTranslators, userRefId)
-      Messages.LittleEndianServer ->  return $ Right (Netcom.littleEndianCommunicators byteSource byteSink, Outbound.littleEndianTranslators, userRefId)
+      Messages.BigEndianServer    ->  return $ Right (bigEndianCommunicators, Netcom.bigEndianTranslators, userRefId)
+      Messages.LittleEndianServer ->  return $ Right (Netcom.littleEndianCommunicators byteSource byteSink, Netcom.littleEndianTranslators, userRefId)
       Messages.UnknownServer      ->  return $ Left "Unknown server type"
       _                           ->  return $ Left "Unknown server type"
 
@@ -119,7 +119,7 @@ dispatchIncomingMessage communicators gui =
       Messages.ServerInfo -> handleServerInfo communicators header
       Messages.UserStatus -> handleUserStatus communicators header
       Messages.UserLoggedOnAndMax -> handleUserLogonNotification communicators gui header
-      Messages.GotHttpServerLocation -> handleMediaServerInfo communicators header
+      Messages.GotHttpServerLocation -> handleMediaServerInfo communicators header >> return ()
       Messages.GotRoomDescription -> handleRoomDescription communicators header
       Messages.GotUserList -> handleUserList communicators header
       Messages.RoomDescend -> return () -- this message just means we're done receiving the room description & user list
@@ -175,19 +175,20 @@ handleUserLogonNotification communicators gui header =
     GUI.appendMessage (GUI.logWindow gui) $ makeRoomAnnouncement message
     return ()
 
-handleMediaServerInfo :: Net.Communicators -> Messages.Header -> IO ()
+handleMediaServerInfo :: Net.Communicators -> Messages.Header -> IO (String)
 handleMediaServerInfo communicators header =
   do
     serverInfo <- Inbound.readMediaServerInfo communicators header
     Log.debugM "Incoming.Message.HttpServerLocation" $ "Media server: " ++ serverInfo
-    return ()
+    -- TODO if we already have a room description, load the media
+    return serverInfo
 
 handleRoomDescription :: Net.Communicators -> Messages.Header -> IO () -- room name, background image, overlay images, props, hotspots, draw commands
 handleRoomDescription communicators header =
   do
     roomDescription <- Inbound.readRoomDescription communicators header  
     Log.debugM "Incoming.Message.GotRoomDescription" $ show roomDescription
-    -- Load background image from  mediaServer using various permutations of backgroundImageName:
+    -- If we have received the media server info, load the background image from the mediaServer using various permutations of backgroundImageName:
        -- If the image name ends with .gif first try to use .png and then .jpg; otherwise use the original name
 
   {- OpenPalace also does this when receiving these messages:

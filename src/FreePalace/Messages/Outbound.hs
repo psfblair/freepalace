@@ -2,14 +2,8 @@ module FreePalace.Messages.Outbound where
 
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as LazyByteString
-
-import Data.Encoding
-import Data.Encoding.CP1252
 import Data.Bits
-import Data.Int
 import Data.Word
-import Data.Monoid
-
 import Control.Applicative
 
 import qualified FreePalace.Messages as Messages
@@ -17,22 +11,12 @@ import qualified FreePalace.Messages.Obfuscate as Obfuscate
 import FreePalace.Net.Types as Net
 import FreePalace.Net.Utils
 
-bigEndianTranslators :: Net.Translators
-bigEndianTranslators = Net.Translators {
-  intsToByteStringBuilder = toIntByteStringBuilder Builder.int32BE,
-  shortsToByteStringBuilder = toShortByteStringBuilder Builder.word16BE
-}
-
-littleEndianTranslators :: Net.Translators
-littleEndianTranslators = Net.Translators {
-  intsToByteStringBuilder = toIntByteStringBuilder Builder.int32LE,
-  shortsToByteStringBuilder = toShortByteStringBuilder Builder.word16LE
-}
-
 loginMessage :: Net.Translators -> Messages.UserId -> LazyByteString.ByteString
 loginMessage translators userId =
-  let intsToBuilder = intsToByteStringBuilder translators
-      shortsToBuilder = shortsToByteStringBuilder translators
+  let intsToBuilder = Net.intsToByteStringBuilder translators
+      shortsToBuilder = Net.shortsToByteStringBuilder translators
+      stringBuilder = Net.toWin1252ByteStringBuilder translators
+      byteBuilder = Net.toSingleByteBuilder translators
       
       msgTypeId = Messages.messageTypeId Messages.Logon
       messageLength = 128
@@ -42,7 +26,7 @@ loginMessage translators userId =
       userName = Messages.userName userId
       userNameLength = min 31 $ length userName -- TODO move this constraint to the UserId itself
       -- TODO Wizard password goes in characters starting at 32
-      paddedUserName = toWin1252ByteStringBuilder $ ensureLength 63 '\0' userName --TODO check that the last character can be non-null
+      paddedUserName = stringBuilder $ ensureLength 63 '\0' userName --TODO check that the last character can be non-null
       auxFlags = flagAuthenticate .|. flagPlatformTypeWin32
       puidCounter = 0xf5dc385e
       puidCrc = 0xc144c580
@@ -51,7 +35,7 @@ loginMessage translators userId =
       demoLimit = 0    -- no longer used
       desiredRoomId = 0 :: Word16 --  Later maybe get the initial desired room from somewhere
      
-      reserved = toWin1252ByteStringBuilder "OPNPAL" -- The protocol spec lists these as reserved, and says nothing should be put in them.
+      reserved = stringBuilder "OPNPAL" -- The protocol spec lists these as reserved, and says nothing should be put in them.
                  -- However, the server records these 6 bytes in its log file.  So we'll exploit that to identify the client type.
                  -- We have to pretend to be Open Palace because newer servers use this to identify the client
      
@@ -65,22 +49,22 @@ loginMessage translators userId =
       upload2dGraphicsCapabilities = 0 -- Unused
       upload3DEngineCapabilities = 0  -- Unused
       
-      builder =     (intsToBuilder       (msgTypeId : messageLength : referenceNumber : guestRegCodeCrc : guestRegCodeCounter : []))
-                  .++ (toSingleByteBuilder userNameLength)
+      builder =       (intsToBuilder     (msgTypeId : messageLength : referenceNumber : guestRegCodeCrc : guestRegCodeCounter : []))
+                  .++ (byteBuilder        userNameLength)
                   .++ paddedUserName
-                  .++ (intsToBuilder       (auxFlags : puidCounter : puidCrc : demoElapsed : totalElapsed : demoLimit : []))
-                  .++ (shortsToBuilder     (desiredRoomId : [])) 
+                  .++ (intsToBuilder     (auxFlags : puidCounter : puidCrc : demoElapsed : totalElapsed : demoLimit : []))
+                  .++ (shortsToBuilder   (desiredRoomId : [])) 
                   .++ reserved
-                  .++ (intsToBuilder       (uploadRequestedProtocolVersion : uploadCapabilities : downloadCapabilities : upload2DEngineCapabilities :
-                                            upload2dGraphicsCapabilities : upload3DEngineCapabilities : []))
+                  .++ (intsToBuilder     (uploadRequestedProtocolVersion : uploadCapabilities : downloadCapabilities : upload2DEngineCapabilities :
+                                          upload2dGraphicsCapabilities : upload3DEngineCapabilities : []))
 
   in Builder.toLazyByteString builder
 
 chatMessage :: Net.Translators -> Messages.Communication -> LazyByteString.ByteString
 chatMessage translators communication =
   do
-    let intsToBuilder = intsToByteStringBuilder translators
-        shortsToBuilder = shortsToByteStringBuilder translators
+    let intsToBuilder = Net.intsToByteStringBuilder translators
+        shortsToBuilder = Net.shortsToByteStringBuilder translators
         
         encoded = Obfuscate.obfuscate $ Messages.message communication
         messageLength = fromIntegral $ LazyByteString.length encoded
@@ -107,21 +91,6 @@ whisperHeader messageLength userRefId target =
       messageType = Messages.messageTypeId Messages.Whisper
       targetRefId = Messages.userRef target
   in messageType : totalLength : userRefId : targetRefId : []
-
-
-toIntByteStringBuilder :: (Int32 -> Builder.Builder) -> [Int] -> Builder.Builder
-toIntByteStringBuilder builderBuilder ints = foldr (.++) mempty builders
-  where builders = builderBuilder <$> fromIntegral <$> ints
-
-toShortByteStringBuilder :: (Word16 -> Builder.Builder) -> [Word16] -> Builder.Builder
-toShortByteStringBuilder builderBuilder shorts = foldr (.++) mempty builders
-  where builders = builderBuilder <$> shorts
-
-toWin1252ByteStringBuilder :: String -> Builder.Builder
-toWin1252ByteStringBuilder stringToEncode = Builder.lazyByteString $ encodeLazyByteString CP1252 stringToEncode
-
-toSingleByteBuilder :: Int -> Builder.Builder
-toSingleByteBuilder theInt = Builder.int8 $ (fromIntegral theInt :: Int8)
 
 ensureLength :: Int -> a -> [a] -> [a]
 ensureLength limit padElement xs 
