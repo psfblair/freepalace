@@ -154,4 +154,17 @@ userIdFrom header userMap =
       defaultUserId = UserId { userRef = refNumber , userName = "User #" ++ show refNumber }
   in Map.findWithDefault defaultUserId refNumber userMap 
 
+-- Ultimately RoomDescription should also contain:
+   -- overlay images - id, name, transpatency index
+   -- hotspots - these come in layers - above avatars, above name tags, above all, above nothing.
+           -- There is also a collection of all of them, and a hash of all of them by ID.
+           -- Hotspots are read by count and initial offset. each record has a fixed length of 48 bytes.
+           -- Hotspots also manage a collection of vertices and a collection of hotspot states
+   -- loose props
+   -- draw commands
+data RoomDescription = RoomDescription {
+    roomId :: Int
+  , roomName :: String
+  , roomBackgroundImageName :: String
+} deriving Show
 

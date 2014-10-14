@@ -1,6 +1,8 @@
 module FreePalace.Messages.Inbound where
 
 import Control.Applicative
+import qualified Data.Convertible.Base as Convert
+import Data.Convertible.Instances.Num
 import qualified Data.Map as Map
 import Data.Word
 
@@ -65,6 +67,7 @@ readUserStatus :: Net.Communicators -> Messages.Header -> IO Word16
 readUserStatus communicators header =
   do
     let readShort = Net.readShort communicators
+        readByte = Net.readByte communicators
         readBytes = Net.readBytes communicators
         trailingBytes = (Messages.messageSize header) - 2
 
@@ -86,11 +89,141 @@ readMediaServerInfo communicators header =
   Net.readTextNoTerminator communicators  $ Messages.messageSize header
 
 -- TODO Finish this
-readRoomDescription :: Net.Communicators -> Messages.Header -> IO ()
+readRoomDescription :: Net.Communicators -> Messages.Header -> IO (RoomDescription)
 readRoomDescription communicators header =
   do
-    Net.readBytes communicators $ Messages.messageSize header
-    return ()
+    let readShort = Net.readShort communicators
+        readInt = Net.readInt communicators
+        readBytes = Net.readBytes communicators
+    roomFlags <- readInt   -- unused
+    face <- readInt        -- unused
+    roomId <- fromIntegral <$> readShort
+    roomNameOffset <- fromIntegral <$> readShort
+    backgroundImageNameOffset <- fromIntegral <$> readShort
+    artistNameOffset <- fromIntegral <$> readShort
+    passwordOffset <- fromIntegral <$> readShort
+    hotSpotCount <- fromIntegral <$> readShort
+    hotSpotOffset <- fromIntegral <$> readShort
+    overlayImageCount <- fromIntegral <$> readShort
+    overlayImageOffset <- fromIntegral <$> readShort
+    drawCommandsCount <- fromIntegral <$> readShort
+    firstDrawCommand <- readShort
+    peopleCount <- fromIntegral <$> readShort
+    loosePropCount <- fromIntegral <$> readShort
+    firstLooseProp <- readShort
+    unused <- readShort
+    roomDataLength <- fromIntegral <$> readShort
+    roomData <- readBytes $ roomDataLength
+    let paddingLength = (Messages.messageSize header) - roomDataLength - 40 -- We have used (roomDataLength + 40 bytes so far)
+    padding <- readBytes paddingLength
+
+    -- This message doesn't come in very often so we're not going to use arrays unless it really makes things slow.
+    let roomNameLength = fromIntegral $ head $ drop roomNameOffset roomData
+        roomName = map Convert.convert $ take roomNameLength $ drop (roomNameOffset + 1) roomData
+        backgroundImageNameLength = fromIntegral $ head $ drop backgroundImageNameOffset roomData
+        backgroundImageName = map Convert.convert $ take backgroundImageNameLength $ drop (backgroundImageNameOffset + 1) roomData
+
+    return Messages.RoomDescription {
+        Messages.roomId = roomId
+      , Messages.roomName = roomName
+      , Messages.roomBackgroundImageName = backgroundImageName
+    }
+{- Next, load:
+     -- overlay images
+     -- hotspots
+     -- loose props
+     -- draw commands
+
+For each overlay image:
+	refCon = imageBA.readInt(); --  unused
+	id = imageBA.readShort();
+	picNameOffset = imageBA.readShort(); 
+	transparencyIndex = imageBA.readShort();
+	readShort(); -- Reserved: padding for field alignment
+        picNameLength <- readByte
+        picName <- readBytes -- from picNameOffset using picNameLength.
+                             -- This is the filename. May need URL escaping based on configuration
+
+For each hotspot:
+        scriptEventMask <- readInt
+	flags <- readInt              -- unused? 
+	secureInfo <- readInt
+	refCon <- readInt             
+	location.y <- readShort
+	location.x <- readShort
+	id <- readShort               -- unused?
+	dest <- readShort
+	numPoints <- readShort  -- local, used for loading vertices (below)
+	pointsOffset <- readShort
+	type <- readShort
+	groupId <- readShort
+	nbrScripts <- readShort
+	scriptRecordOffset <- readShort
+	state <- readShort
+	numStates <- readShort
+	var stateRecordOffset:int <- readShort
+	var nameOffset:int <- readShort
+	var scriptTextOffset:int <- readShort
+	readShort                 -- unused?
+        nameLength  
+        name -- using nameOffset and nameLength
+
+    Now look for script info using the scriptTextOffset:
+        scriptString <- readBytes ... -- all the bytes to the end of the hotspot bytes (this then gets parsed and loaded)
+
+    Now go back into the array and read the vertices of the points of the hotspot, starting with pointsOffset, loop numPoints times:
+        y <- readShort
+        x <- readShort
+
+    Now go back into the array and read the hotspot states starting at stateOffset and looping numStates times. A state is 8 bytes:
+        pictureId <- readShort
+        readShort -- unused
+        y <- readShort
+        x <- readShort
+
+For each loose prop -- this is 24 bytes:
+	nextOffset <- readShort  -- This is the offset into the room data bytes for the next loose prop
+	readShort
+	id <- readUnsignedInt
+	crc <- readUnsignedInt
+	flags <- readUnsignedInt
+	readInt
+	y <- readShort
+	x <- readShort
+
+For each draw command -- has a 10-byte header and then a length specified by commandLength:
+   Header:
+	nextOffset <- readShort       -- offset into the room data bytes for the next draw command
+	ba.readShort -- reserved, unused
+	command <- readUnsignedShort  -- contains both flags and command, obtained by bit shifting/masking. Ignore CMD_DETONATE and CMD_DELETE (?)
+	commandLength <- readUnsignedShort
+	commandStart <- readShort     -- if it's 0, reset to 10 to start after header. (?)
+
+   Starting at commandStart, read pen size and colors (add a preset alpha):
+	penSize <- readShort
+	numPoints <- readShort
+	red <- readUnsignedByte
+	readUnsignedByte 	-- Values are doubled; unclear why.
+	green <- readUnsignedByte
+	readUnsignedByte        -- doubled greem
+	blue <- readUnsignedByte
+	readUnsignedByte        -- doubled blue
+
+   For each point in the polygon up to numPoints:
+	y <- readShort
+	x <- readShort
+
+   If there are remaining bytes (if this fails, fall back to using pen color for everything - this means PalaceChat 3 style packets?)
+	alphaInt <- readUnsignedByte  -- line color and alpha
+	red <- readUnsignedByte
+	green <- readUnsignedByte
+	blue <- readUnsignedByte
+	
+	alphaInt <- readUnsignedByte  -- fill color and alpha
+	red <- readUnsignedByte
+	green <- readUnsignedByte
+	blue <- readUnsignedByte
+-}
 
 -- TODO Finish this
 readUserList :: Net.Communicators -> Messages.Header -> IO ()

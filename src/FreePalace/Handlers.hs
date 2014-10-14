@@ -170,7 +170,7 @@ handleUserLogonNotification :: Net.Communicators -> GUI.Components -> Messages.H
 handleUserLogonNotification communicators gui header =
   do
     (logonId, totalUserCount) <- Inbound.readUserLogonNotification communicators header
-    let message = "User " ++ (Messages.userName $ Messages.userIdFrom header refIdToUserIdMapping) ++ " just logged on."
+    let message = "User " ++ (Messages.userName $ Messages.userIdFrom header refIdToUserIdMapping) ++ " just arrived."
     Log.debugM  "Incoming.Message.UserLoggedOnAndMax" $  message ++ "  Population: " ++ (show totalUserCount)
     GUI.appendMessage (GUI.logWindow gui) $ makeRoomAnnouncement message
     return ()
@@ -182,21 +182,25 @@ handleMediaServerInfo communicators header =
     Log.debugM "Incoming.Message.HttpServerLocation" $ "Media server: " ++ serverInfo
     return ()
 
-handleRoomDescription :: Net.Communicators -> Messages.Header -> IO ()
+handleRoomDescription :: Net.Communicators -> Messages.Header -> IO () -- room name, background image, overlay images, props, hotspots, draw commands
 handleRoomDescription communicators header =
   do
-    Inbound.readRoomDescription communicators header
-    Log.debugM "Incoming.Message.GotRoomDescription" $ "Received room description."
+    roomDescription <- Inbound.readRoomDescription communicators header  
+    Log.debugM "Incoming.Message.GotRoomDescription" $ show roomDescription
+    -- Load background image from  mediaServer using various permutations of backgroundImageName:
+       -- If the image name ends with .gif first try to use .png and then .jpg; otherwise use the original name
+
+  {- OpenPalace also does this when receiving these messages:
+	clearStatusMessage currentRoom
+	clearAlarms
+	midiStop
+     and after parsing the information:
+        Dim room 100
+        Room.showAvatars = true -- scripting can hide all avatars
+        Dispatch room change event for scripting
+    -}
     return ()
-  {- This is where the name, background image, hotspots, etc. come in. We'll do that later.
-     Also OpenPalace does this when receiving these messages:
-			currentRoom.clearStatusMessage();
-			palaceController.clearAlarms();
-			palaceController.midiStop();
-
-    and eventually emits a room change event for iptScrae
-  -}
-
+    
 handleUserList :: Net.Communicators -> Messages.Header -> IO ()
 handleUserList communicators header =
   do
