@@ -49,6 +49,7 @@ loadGladeComponents gladepath =
     windowMove mainWindow 322 50
     connectDialog <- builderGetObject builder castToDialog "connectDialog"
     connectHostEntry <- builderGetObject builder castToEntry "hostEntry"
+    widgetGrabFocus connectHostEntry
     connectPortEntry <- builderGetObject builder castToEntry "portEntry"
     connectOkButton <- builderGetObject builder castToButton "connectOk"
     connectCancelButton <- builderGetObject builder castToButton "connectCancel"
@@ -60,6 +61,7 @@ loadGladeComponents gladepath =
     logTextBuffer <- builderGetObject builder castToTextBuffer "logTextBuffer"
 
     chatEntry <- builderGetObject builder castToEntry "chatEntry"
+    widgetGrabFocus chatEntry 
     chatButton <- builderGetObject builder castToButton "chatButton"
     
     return $ GtkGui mainWindow
