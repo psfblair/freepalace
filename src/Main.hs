@@ -16,7 +16,7 @@ main = withSocketsDo $ do
   updateGlobalLogger rootLoggerName (setLevel DEBUG)
   dataFileName <- getDataFileName "freepalace.resources.glade"
   guiComponents <- Gtk.init dataFileName
-  let initialState = State.DisconnectedState (State.Disconnected guiComponents) 
+  let initialState = State.DisconnectedState (State.Disconnected guiComponents State.HostDirectory) 
       connectionRequestHandler = Handlers.handleConnectRequested initialState State.PalaceProtocol
   GUI.initializeGUI guiComponents connectionRequestHandler
   Gtk.start

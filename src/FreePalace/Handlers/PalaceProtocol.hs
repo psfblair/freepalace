@@ -9,6 +9,7 @@ import qualified FreePalace.Messages as Messages
 import qualified FreePalace.Messages.PalaceProtocol.Inbound as PalaceInbound
 import qualified FreePalace.Messages.PalaceProtocol.Outbound as PalaceOutbound
 import qualified FreePalace.Net as Netcom
+import qualified FreePalace.Net.Types as Net
 import qualified FreePalace.Net.Receive as Receive
 import qualified FreePalace.Net.Send as Send
 import qualified FreePalace.GUI.Types as GUI
@@ -22,7 +23,8 @@ handleHandshake clientState connection messageConverters =
     header <- Receive.readHeader readInt -- TODO Time out if this takes too long
     let msgType    = Messages.messageType header
         userRefId  = Messages.messageRefNumber header
-        newState   = clientState { State.userState = State.UserState { State.userId = State.userIdFor userRefId }}
+        currentUserState = State.userState clientState
+        newState   = clientState { State.userState = State.LoggedIn { State.userId = State.userIdFor currentUserState userRefId }}
     Log.debugM "Incoming.Handshake" (show msgType)
     case msgType of
       Messages.BigEndianServer    -> return  $ newState
@@ -103,14 +105,14 @@ handleUserLogonNotification clientState connection messageConverters userMap hea
     Log.debugM  "Incoming.Message.UserLoggedOnAndMax" $  message ++ "  Population: " ++ (show totalUserCount)
     return (message, clientState)
 
-handleMediaServerInfo :: State.Connected -> State.PalaceConnection -> Messages.Header -> IO State.Connected
+handleMediaServerInfo :: State.Connected -> State.PalaceConnection -> Messages.Header -> IO (Net.URI, State.Connected)
 handleMediaServerInfo clientState connection header =  
   do
     let byteSource = State.palaceByteSource connection
     serverInfo <- PalaceInbound.readMediaServerInfo byteSource header
     Log.debugM "Incoming.Message.HttpServerLocation" $ "Media server: " ++ serverInfo
     -- TODO if we already have a room description, load the media
-    return clientState 
+    return (serverInfo, clientState)
 
  -- room name, background image, overlay images, props, hotspots, draw commands
 handleRoomDescription :: State.Connected -> State.PalaceConnection -> State.PalaceMessageConverters -> Messages.Header -> IO State.Connected

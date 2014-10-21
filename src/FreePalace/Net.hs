@@ -27,7 +27,7 @@ connect priorState State.PalaceProtocol hostname portId =
     return $ justConnectedToPalaceState priorState byteSource byteSink hostname portId
 
 disconnect :: State.ClientState -> IO State.Disconnected
-disconnect (State.DisconnectedState state@(State.Disconnected _)) = return state
+disconnect (State.DisconnectedState state@(State.Disconnected _ _)) = return state
 disconnect (State.ConnectedState State.Connected {
     State.guiState = gui
   , State.protocolState = State.PalaceProtocolState connection converters
@@ -36,7 +36,7 @@ disconnect (State.ConnectedState State.Connected {
     let (Net.SocketByteSource socket) = State.palaceByteSource connection
         disconnectAttempt = Socket.close socket
     catch disconnectAttempt (\(SomeException e) -> return ())  -- If we can't disconnect, we're going to be throwing away that connection state anyway.
-    return $ State.Disconnected gui
+    return $ State.Disconnected gui State.HostDirectory
 
 justConnectedToPalaceState :: State.Disconnected -> Net.IncomingByteSource -> Net.OutgoingByteSink -> Net.Hostname -> Net.PortId -> State.Connected
 justConnectedToPalaceState priorState byteSource byteSink hostname portId =
@@ -49,8 +49,8 @@ justConnectedToPalaceState priorState byteSource byteSink hostname portId =
       State.protocolState = State.PalaceProtocolState connection defaultPalaceMessageConverters
     , State.guiState = gui
     , State.hostState = State.initialHostStateFor hostname portId
-    , State.hostDirectoryState = State.EmptyHostDirectory
-    , State.userState = State.NotLoggedIn
+    , State.hostDirectory = State.HostDirectory
+    , State.userState = State.NotLoggedIn { State.userName = State.defaultUserName }
     }
 
 defaultPalaceMessageConverters :: State.PalaceMessageConverters

@@ -16,13 +16,14 @@ data ClientState =
 
 data Disconnected = Disconnected {
     disconnectedGui :: GUI.Components
+  , disconnectedHostDirectory :: HostDirectory  
   }
 
 data Connected = Connected {
     protocolState :: ProtocolState
   , guiState :: GUI.Components
   , hostState :: HostState
-  , hostDirectoryState :: HostDirectoryState
+  , hostDirectory :: HostDirectory
   , userState :: UserState
   }
 
@@ -45,6 +46,7 @@ data PalaceMessageConverters = PalaceMessageConverters {
 data HostState = NoHost | HostState {
     hostname :: Net.Hostname
   , portId :: Net.PortId
+  , mediaServer :: Maybe Net.URI
   -- TODO , serverVersion :: ServerVersion
   , roomListState :: RoomListState
   , userListState :: UserListState
@@ -74,28 +76,42 @@ data CurrentRoomState =  NoCurrentRoom | CurrentRoomState {
   -- TODO draw commands
   }
 
-data HostDirectoryState = EmptyHostDirectory | HostDirectoryState
+data HostDirectory = HostDirectory
 
-data UserState = NotLoggedIn | UserState {
+data UserState = NotLoggedIn { userName :: String }
+               | LoggedIn    {
   userId :: Messages.UserId
   -- TODO props
   -- TODO sounds
   -- TODO settings
   }
 
-userIdFor :: Int -> Messages.UserId
-userIdFor refId = Messages.UserId {
-    Messages.userRef = refId
-  , Messages.userName = "Haskell Curry" -- TODO allow user to set user name
+userIdFor :: UserState -> Int -> Messages.UserId
+userIdFor userState refId = Messages.UserId {
+  Messages.userRef = refId
+  , Messages.userName = case userState of
+                         NotLoggedIn { userName = name } -> name
+                         LoggedIn    { userId = Messages.UserId { Messages.userName = name }} -> name 
   }
+
+defaultUserName :: String
+defaultUserName = "Haskell Curry" -- TODO allow user to set user name
 
 initialHostStateFor :: Net.Hostname -> Net.PortId -> HostState
 initialHostStateFor hostName portid = HostState {
     hostname = hostName
   , portId = portid
+  , mediaServer = Nothing
   , roomListState = EmptyRoomList
   , userListState = EmptyUserList
   , logState = EmptyLog
   , currentRoomState = NoCurrentRoom
   }
 
+withMediaServerInfo :: Connected -> Net.URI -> Connected
+withMediaServerInfo currentState mediaServerUri =
+  currentState {
+    hostState = (hostState currentState) {
+       mediaServer = Just mediaServerUri
+    }
+  }

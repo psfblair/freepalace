@@ -154,7 +154,9 @@ handleUserLogonNotification clientState@(State.Connected { State.protocolState =
     
 handleMediaServerInfo :: State.Connected -> Messages.Header -> IO State.Connected
 handleMediaServerInfo clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
-  PalaceHandlers.handleMediaServerInfo clientState connection header
+  do
+    (serverInfo, state) <- PalaceHandlers.handleMediaServerInfo clientState connection header
+    return $ State.withMediaServerInfo state serverInfo
 
  -- room name, background image, overlay images, props, hotspots, draw commands
 handleRoomDescription :: State.Connected -> Messages.Header -> IO State.Connected
