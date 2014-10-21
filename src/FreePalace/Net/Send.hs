@@ -1,7 +1,7 @@
 module FreePalace.Net.Send where
 
 import qualified Network.Socket.ByteString.Lazy as NetworkLazyByteString 
-import qualified Data.ByteString.Builder as Builder
+import qualified Data.ByteString.Lazy.Builder as Builder
 import qualified Data.ByteString.Lazy as LazyByteString
 import Data.Word
 import Data.Int
@@ -32,4 +32,3 @@ toWin1252ByteStringBuilder stringToEncode = Builder.lazyByteString $ encodeLazyB
 
 toSingleByteBuilder :: Int -> Builder.Builder
 toSingleByteBuilder theInt = Builder.int8 $ (fromIntegral theInt :: Int8)
-

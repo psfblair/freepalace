@@ -1,5 +1,5 @@
 {-# LANGUAGE ViewPatterns, PatternSynonyms #-}
-module FreePalace.Messages.Obfuscate where
+module FreePalace.Messages.PalaceProtocol.Obfuscate where
 
 import qualified Data.ByteString.Lazy as LazyByteString
 import qualified Data.Convertible.Base as Convert

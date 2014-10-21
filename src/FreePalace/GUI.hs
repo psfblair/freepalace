@@ -1,5 +1,6 @@
 module FreePalace.GUI where
 
+import qualified FreePalace.State as State
 import qualified FreePalace.Handlers as Handlers
 import qualified FreePalace.Net.Types as Net
 import FreePalace.GUI.Types

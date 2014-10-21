@@ -1,9 +1,9 @@
-module FreePalace.Messages.ObfuscateSpec (spec) where
+module FreePalace.Messages.PalaceProtocol.ObfuscateSpec (spec) where
 
 import qualified Data.ByteString.Lazy as LazyByteString
 import Test.Hspec
 
-import FreePalace.Messages.Obfuscate
+import FreePalace.Messages.PalaceProtocol.Obfuscate
 
 spec :: Spec
 spec = do

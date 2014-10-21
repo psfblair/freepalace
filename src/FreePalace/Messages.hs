@@ -154,6 +154,19 @@ userIdFrom header userMap =
       defaultUserId = UserId { userRef = refNumber , userName = "User #" ++ show refNumber }
   in Map.findWithDefault defaultUserId refNumber userMap 
 
+roomAnnouncementUserId = UserId { userRef = 0, userName = "Announcement" }
+
+makeRoomAnnouncement :: String -> Communication
+makeRoomAnnouncement message =
+  Communication {
+    speaker = roomAnnouncementUserId,
+    target = Nothing,
+    message = message,
+    chatMode = Announcement
+  }
+
+
+
 -- Ultimately RoomDescription should also contain:
    -- overlay images - id, name, transpatency index
    -- hotspots - these come in layers - above avatars, above name tags, above all, above nothing.

@@ -1,71 +1,73 @@
-{-# LANGUAGE ExistentialQuantification #-}
 module FreePalace.Net where
 
 import qualified Network.Socket as Socket hiding (send, sendTo, recv, recvFrom) -- I wish this module didn't have to know about sockets.
 import qualified Data.ByteString.Lazy as LazyByteString
-import qualified Data.ByteString.Builder as Builder
-
+import qualified Data.ByteString.Lazy.Builder as Builder
+import qualified Data.Binary.Get as Get
 import Data.Word
 import Data.Int
+import Control.Exception
 
 import qualified FreePalace.Net.Types as Net
 import qualified FreePalace.Messages as Messages
 import qualified FreePalace.Net.Send as Send
 import qualified FreePalace.Net.Receive as Receive
+import qualified FreePalace.State as State
 
-socketConnectors = Net.Connectors {
-    Net.connect = \hostname portNum -> 
-                 do
-                   addrinfos <- Socket.getAddrInfo Nothing (Just hostname) (Just portNum)
-                   let serveraddr = head addrinfos
-                   socket <- Socket.socket (Socket.addrFamily serveraddr) Socket.Stream Socket.defaultProtocol
-                   Socket.setSocketOption socket Socket.KeepAlive 1
-                   Socket.connect socket (Socket.addrAddress serveraddr)
-                   return $ Net.Channels { Net.source = Net.SocketByteSource socket, Net.sink = Net.SocketByteSink socket }
+connect :: State.Disconnected -> State.Protocol -> Net.Hostname -> Net.PortId -> IO State.Connected
+connect priorState State.PalaceProtocol hostname portId =
+  do
+    addrinfos <- Socket.getAddrInfo Nothing (Just hostname) (Just portId)
+    let serveraddr = head addrinfos
+    socket <- Socket.socket (Socket.addrFamily serveraddr) Socket.Stream Socket.defaultProtocol
+    Socket.setSocketOption socket Socket.KeepAlive 1
+    Socket.connect socket (Socket.addrAddress serveraddr)
+    let byteSource = Net.SocketByteSource socket
+        byteSink = Net.SocketByteSink socket
+    return $ justConnectedToPalaceState priorState byteSource byteSink hostname portId
 
-  , Net.disconnect = \(Net.SocketByteSource socket) -> Socket.close socket
-}
+disconnect :: State.ClientState -> IO State.Disconnected
+disconnect (State.DisconnectedState state@(State.Disconnected _)) = return state
+disconnect (State.ConnectedState State.Connected {
+    State.guiState = gui
+  , State.protocolState = State.PalaceProtocolState connection converters
+  }) =
+  do
+    let (Net.SocketByteSource socket) = State.palaceByteSource connection
+        disconnectAttempt = Socket.close socket
+    catch disconnectAttempt (\(SomeException e) -> return ())  -- If we can't disconnect, we're going to be throwing away that connection state anyway.
+    return $ State.Disconnected gui
 
--- We treat big endian as the "natural" order; the Linpal and OpenPalace clients treat it as the default.
-bigEndianCommunicators :: Net.IncomingByteSource -> Net.OutgoingByteSink -> Net.Communicators
-bigEndianCommunicators byteSource byteSink = Net.Communicators {
-    Net.readInt = Receive.readIntFromNetwork id byteSource
-  , Net.readInts = Receive.readIntsFromNetwork id byteSource
-  , Net.readByte = Receive.readByteFromNetwork byteSource
-  , Net.readBytes = Receive.readBytesFromNetwork byteSource
-  , Net.readShort = Receive.readShortFromNetwork id byteSource
-  , Net.readText = Receive.readNullTerminatedTextFromNetwork id byteSource
-  , Net.readTextNoTerminator = Receive.readTextFromNetwork id byteSource
-  , Net.readHeader = Receive.readHeader $ Receive.readIntFromNetwork id byteSource
-  , Net.writeBytes = Send.writeBytesToSink byteSink
-}
+justConnectedToPalaceState :: State.Disconnected -> Net.IncomingByteSource -> Net.OutgoingByteSink -> Net.Hostname -> Net.PortId -> State.Connected
+justConnectedToPalaceState priorState byteSource byteSink hostname portId =
+  let gui = State.disconnectedGui priorState
+      connection  = State.PalaceConnection {
+          State.palaceByteSource = byteSource
+        , State.palaceByteSink = byteSink
+        }
+  in State.Connected {
+      State.protocolState = State.PalaceProtocolState connection defaultPalaceMessageConverters
+    , State.guiState = gui
+    , State.hostState = State.initialHostStateFor hostname portId
+    , State.hostDirectoryState = State.EmptyHostDirectory
+    , State.userState = State.NotLoggedIn
+    }
 
-littleEndianCommunicators :: Net.IncomingByteSource -> Net.OutgoingByteSink -> Net.Communicators
-littleEndianCommunicators byteSource byteSink = Net.Communicators {
-    Net.readInt = Receive.readIntFromNetwork LazyByteString.reverse byteSource
-  , Net.readInts = Receive.readIntsFromNetwork LazyByteString.reverse byteSource
-  , Net.readByte = Receive.readByteFromNetwork byteSource
-  , Net.readBytes = Receive.readBytesFromNetwork byteSource
-  , Net.readShort = Receive.readShortFromNetwork LazyByteString.reverse byteSource
-  , Net.readText = Receive.readNullTerminatedTextFromNetwork LazyByteString.reverse byteSource
-  , Net.readTextNoTerminator = Receive.readTextFromNetwork id byteSource
-  , Net.readHeader = Receive.readHeader $ Receive.readIntFromNetwork LazyByteString.reverse byteSource
-  , Net.writeBytes = Send.writeBytesToSink byteSink
-}
+defaultPalaceMessageConverters :: State.PalaceMessageConverters
+defaultPalaceMessageConverters = bigEndianMessageConverters
 
-bigEndianTranslators :: Net.Translators
-bigEndianTranslators = Net.Translators {
-    Net.intsToByteStringBuilder = Send.toIntByteStringBuilder Builder.int32BE
-  , Net.shortsToByteStringBuilder = Send.toShortByteStringBuilder Builder.word16BE
-  , Net.toWin1252ByteStringBuilder = Send.toWin1252ByteStringBuilder
-  , Net.toSingleByteBuilder = Send.toSingleByteBuilder                         
-}
+bigEndianMessageConverters :: State.PalaceMessageConverters
+bigEndianMessageConverters = State.PalaceMessageConverters {
+    State.palaceShortWriter = Builder.word16BE
+  , State.palaceIntWriter = Builder.int32BE
+  , State.palaceShortReader = Get.getWord16be
+  , State.palaceIntReader = Get.getWord32be
+  }
 
-littleEndianTranslators :: Net.Translators
-littleEndianTranslators = Net.Translators {
-    Net.intsToByteStringBuilder = Send.toIntByteStringBuilder Builder.int32LE
-  , Net.shortsToByteStringBuilder = Send.toShortByteStringBuilder Builder.word16LE
-  , Net.toWin1252ByteStringBuilder = Send.toWin1252ByteStringBuilder
-  , Net.toSingleByteBuilder = Send.toSingleByteBuilder
-}
-
+littleEndianMessageConverters :: State.PalaceMessageConverters
+littleEndianMessageConverters = State.PalaceMessageConverters {
+    State.palaceShortWriter = Builder.word16LE
+  , State.palaceIntWriter = Builder.int32LE
+  , State.palaceShortReader = Get.getWord16le
+  , State.palaceIntReader = Get.getWord32le
+  }

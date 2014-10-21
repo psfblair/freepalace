@@ -5,27 +5,30 @@ import qualified System.Log.Logger as Log
 import qualified Data.Map as Map
 import Control.Applicative
 import Control.Concurrent
+import Control.Exception
 
+import qualified FreePalace.State as State
 import qualified FreePalace.Messages as Messages
-import qualified FreePalace.Messages.Outbound as Outbound
-import qualified FreePalace.Messages.Inbound as Inbound
+import qualified FreePalace.Messages.PalaceProtocol.Outbound as PalaceOutbound
+import qualified FreePalace.Messages.PalaceProtocol.Inbound as Inbound
 import qualified FreePalace.Net.Receive as Recv
 import qualified FreePalace.Net.Send as Send
 import qualified FreePalace.GUI.Types as GUI
 import qualified FreePalace.Net as Netcom
 import qualified FreePalace.Net.Types as Net
+import qualified FreePalace.Handlers.PalaceProtocol as PalaceHandlers
 
 data GUIEventHandlers = GUIEventHandlers {
   handleUserTextEntry :: IO ()
 }
 
-guiEventHandlers :: GUI.Components -> Net.Communicators -> Net.Translators -> Messages.UserId -> GUIEventHandlers
-guiEventHandlers gui communicators translators userId = GUIEventHandlers {
-  handleUserTextEntry = speak gui communicators translators userId
+guiEventHandlers :: State.Connected -> GUIEventHandlers
+guiEventHandlers clientState = GUIEventHandlers {
+  handleUserTextEntry = speak clientState
 }
 
-bindHandlers :: GUI.Components -> GUIEventHandlers -> IO ()
-bindHandlers guiComponents guiEventHandlers =
+bindHandlers :: State.Connected -> GUIEventHandlers -> IO ()
+bindHandlers State.Connected { State.guiState = guiComponents }  guiEventHandlers =
   do
     bindUserTextEntry guiComponents $ handleUserTextEntry guiEventHandlers
     return ()
@@ -38,236 +41,178 @@ bindUserTextEntry guiComponents userTextEntryHandler =
     GUI.onEnterKeyPress chatEntryField userTextEntryHandler
     GUI.onButtonClick chatSendButton userTextEntryHandler
 
-handleConnectRequested :: GUI.Components -> Net.Connectors -> Net.Hostname -> Net.PortId -> IO ()
-handleConnectRequested gui connectors host portString =
+-- TODO Once client is connected and disconnects, how does this function get the updated state for the next connection?
+handleConnectRequested :: State.ClientState -> State.Protocol -> Net.Hostname -> Net.PortId -> IO ()
+handleConnectRequested clientState protocol host port =
   do
-    -- TODO If we are already connected, disconnect
-    let connect = Net.connect connectors
-    channels <- connect (host::Net.Hostname) (portString::Net.PortId) 
-    handshake <- handleHandshake channels    -- Now in STATE_HANDSHAKING
-    case handshake of
-      Left msg -> return () -- TODO Provide some way to indicate connection failed. Don't close the connection window.
-      Right (communicators, translators, userRefId) ->  -- Now in STATE_READY 
-        do
-          -- TODO Allow user to set user name
-          let user = Messages.UserId { Messages.userRef = userRefId, Messages.userName = "Haskell Curry"}
-          sendLogin communicators translators user   -- TODO Also could raise IO Error
-          messageListenerThreadId <- forkIO $ dispatchIncomingMessage communicators gui
-          bindHandlers gui $ guiEventHandlers gui communicators translators user  -- TODO allow rebinding if user name changes
-          -- TODO Must bind disconnect and reconnect to something that will stop the forked process (Control.Concurrent -  killThread :: ThreadId -> IO () )
-          GUI.closeDialog $ GUI.connectDialog gui
+    let connectAttempt =
+          do
+            disconnectedState <- Netcom.disconnect clientState
+            connectedState    <- Netcom.connect disconnectedState protocol host port 
+            readyState        <- handleHandshake connectedState
+            -- TODO Must bind disconnect and reconnect to something that will stop the forked process
+            -- i.e., Control.Concurrent.killThread :: ThreadId -> IO ()
+            -- TODO If this thread dies or an exception is thrown on it, need to handle the disconnect
+            messageListenerThreadId <- forkIO $ dispatchIncomingMessages readyState
+            bindHandlers readyState $ guiEventHandlers readyState
+            sendLogin readyState
+            GUI.closeDialog . GUI.connectDialog . State.guiState $ readyState
+    catch connectAttempt (\(SomeException exception) ->
+                           do 
+                             Log.errorM "Connection" $ show exception
+                             -- TODO Provide some way in the GUI to indicate connection failed.
+                             -- TODO State monad - grab the actual current state, not where it started out
+                             disconnectedState <- Netcom.disconnect clientState
+                             GUI.closeDialog . GUI.connectDialog . State.disconnectedGui $ disconnectedState
+                             return ())
 
--- TODO Time out if this takes too long
--- TODO Use IOError instead of Either? Or at least don't wrap strings in Either
-handleHandshake :: Net.Channels -> IO (Either String (Net.Communicators, Net.Translators, Int))
-handleHandshake channels =
-  do
-    let byteSource = Net.source channels
-    let byteSink = Net.sink channels
-    let bigEndianCommunicators =  Netcom.bigEndianCommunicators byteSource byteSink -- default to big endian
-    header <- Net.readHeader bigEndianCommunicators
-    let msgType = Messages.messageType header
-        userRefId = Messages.messageRefNumber header
-    Log.debugM "Incoming.Handshake" (show msgType)
-    case msgType of
-      Messages.BigEndianServer    ->  return $ Right (bigEndianCommunicators, Netcom.bigEndianTranslators, userRefId)
-      Messages.LittleEndianServer ->  return $ Right (Netcom.littleEndianCommunicators byteSource byteSink, Netcom.littleEndianTranslators, userRefId)
-      Messages.UnknownServer      ->  return $ Left "Unknown server type"
-      _                           ->  return $ Left "Unknown server type"
+handleHandshake :: State.Connected -> IO State.Connected
+handleHandshake clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) =
+  PalaceHandlers.handleHandshake clientState connection messageConverters
 
-sendLogin :: Net.Communicators -> Net.Translators -> Messages.UserId -> IO ()
-sendLogin communicators translators userId =
+sendLogin :: State.Connected -> IO ()
+sendLogin clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) =
   do
-    let sendBytes = Net.writeBytes communicators
-        loginMessageBytes = Outbound.loginMessage translators userId
-    sendBytes loginMessageBytes
+    let userId = State.userId $ State.userState clientState
+    PalaceHandlers.sendLogin connection messageConverters userId
 
 -- TODO The handler has to see if 1) it's connected, 2) it's a client command, 3) it's a script call, 4) a user is selected (for whisper)
--- TODO ultimately for this to be able to allow the user to change name mid-stream, this needs to take a way to get the latest name from
---      the user mapping
-speak :: GUI.Components -> Net.Communicators -> Net.Translators -> Messages.UserId -> IO ()
-speak gui communicators translators userId =
+speak :: State.Connected -> IO ()
+speak clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) =
   do
-    let sendBytes = Net.writeBytes communicators
-        textEntryField = GUI.chatEntry gui
-        selectedUser = Nothing -- TODO - get selected user from ... ?
+    let userId            = State.userId $ State.userState clientState
+        selectedUser      = Nothing -- TODO - get selected user from ... ?
+        textEntryField    = GUI.chatEntry $ State.guiState clientState
     messageText <- GUI.textValue textEntryField
-    
-    -- TODO check the initial character of the message for instructions
-    let communication = Messages.Communication {
-          Messages.speaker = userId,
-          Messages.target = selectedUser,
-          Messages.message = messageText,
-          Messages.chatMode = Messages.Outbound
-          }
-        chatMessage = Outbound.chatMessage translators communication
-    Log.debugM "Outgoing.Talk" (show communication)
-    sendBytes chatMessage
+    PalaceHandlers.speak connection messageConverters userId messageText selectedUser
     GUI.clearTextEntry textEntryField
 
-
 -- TODO Handle connection loss
-dispatchIncomingMessage :: Net.Communicators -> GUI.Components -> IO ()
-dispatchIncomingMessage communicators gui =
+dispatchIncomingMessages :: State.Connected -> IO ()
+dispatchIncomingMessages clientState =
   do
-    header <- Net.readHeader communicators
+    header <- readHeader clientState
     Log.debugM "Incoming.Message.Header" (show header)
-    case Messages.messageType header of
+    newState <- case Messages.messageType header of
       -- Logon sequence after handshake received and logon sent
-      Messages.AlternateLogonReply -> handleAlternateLogonReply communicators
-      Messages.ServerVersion -> handleServerVersion communicators header
-      Messages.ServerInfo -> handleServerInfo communicators header
-      Messages.UserStatus -> handleUserStatus communicators header
-      Messages.UserLoggedOnAndMax -> handleUserLogonNotification communicators gui header
-      Messages.GotHttpServerLocation -> handleMediaServerInfo communicators header >> return ()
-      Messages.GotRoomDescription -> handleRoomDescription communicators header
-      Messages.GotUserList -> handleUserList communicators header
-      Messages.RoomDescend -> return () -- this message just means we're done receiving the room description & user list
-      Messages.UserNew -> handleNewUserNotification communicators header
+      Messages.AlternateLogonReply -> handleAlternateLogonReply clientState
+      Messages.ServerVersion -> handleServerVersion clientState header
+      Messages.ServerInfo -> handleServerInfo clientState header
+      Messages.UserStatus -> handleUserStatus clientState header
+      Messages.UserLoggedOnAndMax -> handleUserLogonNotification clientState header
+      Messages.GotHttpServerLocation -> handleMediaServerInfo clientState header >> return clientState -- TODO need State monad!
+      Messages.GotRoomDescription -> handleRoomDescription clientState header
+      Messages.GotUserList -> handleUserList clientState header
+      Messages.RoomDescend -> return clientState -- this message just means we're done receiving the room description & user list
+      Messages.UserNew -> handleNewUserNotification clientState header
       -- End logon sequence
       
-      Messages.Talk -> handleTalk gui communicators header Messages.TalkAloud
-      Messages.CrossRoomWhisper -> handleTalk gui communicators header Messages.Whispering
-      Messages.Say -> handleEncodedTalk gui communicators header Messages.TalkAloud
-      Messages.Whisper -> handleEncodedTalk gui communicators header Messages.Whispering
-      Messages.Move -> handleMovement gui communicators header
-      _ -> handleUnknownMessage communicators header
-    dispatchIncomingMessage communicators gui
+      Messages.Talk -> handleTalk clientState header Messages.TalkAloud
+      Messages.CrossRoomWhisper -> handleTalk clientState header Messages.Whispering
+      Messages.Say -> handleEncodedTalk clientState header Messages.TalkAloud
+      Messages.Whisper -> handleEncodedTalk clientState header Messages.Whispering
+      Messages.Move -> handleMovement clientState header
+      _ -> handleUnknownMessage clientState header
+    dispatchIncomingMessages newState
+
+readHeader :: State.Connected -> IO Messages.Header
+readHeader State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters } =
+  PalaceHandlers.readHeader connection messageConverters        
+
 
 {- OpenPalace comments say:
   This is only sent when the server is running in "guests-are-members" mode.
-  This is pointless... it's basically echoing back the logon packetthat we sent to the server.
+  This is pointless... it's basically echoing back the logon packet that we sent to the server.
   The only reason we support this is so that certain silly servers can change our puid and ask
   us to reconnect "for security reasons."
 -}
-handleAlternateLogonReply :: Net.Communicators -> IO ()  -- TODO return puidCrc and puidCounter when we need it
-handleAlternateLogonReply communicators =
-  do
-    Inbound.readAlternateLogonReply communicators
-    return ()
+handleAlternateLogonReply :: State.Connected -> IO State.Connected  -- TODO return puidCrc and puidCounter when we need it
+handleAlternateLogonReply clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) =
+  PalaceHandlers.handleAlternateLogonReply clientState connection messageConverters        
 
-handleServerVersion :: Net.Communicators -> Messages.Header -> IO ()
-handleServerVersion communicators header =
+handleServerVersion :: State.Connected -> Messages.Header -> IO State.Connected
+handleServerVersion clientState header =
   do
     Log.debugM "Incoming.Message.ServerVersion" ("Server version: " ++ (show $ Messages.messageRefNumber header))
-    return () -- TODO At some point probably something will need to happen here
+    return clientState -- TODO Add server version to host state
 
-handleServerInfo :: Net.Communicators -> Messages.Header -> IO ()
-handleServerInfo communicators header =
+handleServerInfo :: State.Connected -> Messages.Header -> IO State.Connected
+handleServerInfo clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
+  PalaceHandlers.handleServerInfo clientState connection messageConverters header 
+  
+handleUserStatus :: State.Connected -> Messages.Header -> IO State.Connected
+handleUserStatus clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
+  PalaceHandlers.handleUserStatus clientState connection messageConverters header 
+
+handleUserLogonNotification :: State.Connected -> Messages.Header -> IO State.Connected
+handleUserLogonNotification clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
   do
-    (serverName, permissions) <- Inbound.readServerInfo communicators header --TODO probably need to do something with this server name
-    Log.debugM "Incoming.Message.ServerInfo" $ "Server name: " ++ serverName
-    return ()
-
-handleUserStatus :: Net.Communicators -> Messages.Header -> IO () -- TODO probably need to do something with this info
-handleUserStatus communicators header =
-  do
-    userFlags  <- Inbound.readUserStatus communicators header
-    Log.debugM "Incoming.Message.UserStatus" $ "User status -- User flags: " ++ (show userFlags)
-    return ()
-
-handleUserLogonNotification :: Net.Communicators -> GUI.Components -> Messages.Header -> IO ()
-handleUserLogonNotification communicators gui header =
-  do
-    (logonId, totalUserCount) <- Inbound.readUserLogonNotification communicators header
-    let message = "User " ++ (Messages.userName $ Messages.userIdFrom header refIdToUserIdMapping) ++ " just arrived."
-    Log.debugM  "Incoming.Message.UserLoggedOnAndMax" $  message ++ "  Population: " ++ (show totalUserCount)
-    GUI.appendMessage (GUI.logWindow gui) $ makeRoomAnnouncement message
-    return ()
-
-handleMediaServerInfo :: Net.Communicators -> Messages.Header -> IO (String)
-handleMediaServerInfo communicators header =
-  do
-    serverInfo <- Inbound.readMediaServerInfo communicators header
-    Log.debugM "Incoming.Message.HttpServerLocation" $ "Media server: " ++ serverInfo
-    -- TODO if we already have a room description, load the media
-    return serverInfo
-
-handleRoomDescription :: Net.Communicators -> Messages.Header -> IO () -- room name, background image, overlay images, props, hotspots, draw commands
-handleRoomDescription communicators header =
-  do
-    roomDescription <- Inbound.readRoomDescription communicators header  
-    Log.debugM "Incoming.Message.GotRoomDescription" $ show roomDescription
-    -- If we have received the media server info, load the background image from the mediaServer using various permutations of backgroundImageName:
-       -- If the image name ends with .gif first try to use .png and then .jpg; otherwise use the original name
-
-  {- OpenPalace also does this when receiving these messages:
-	clearStatusMessage currentRoom
-	clearAlarms
-	midiStop
-     and after parsing the information:
-        Dim room 100
-        Room.showAvatars = true -- scripting can hide all avatars
-        Dispatch room change event for scripting
-    -}
-    return ()
+    let gui = State.guiState clientState
+    (message, state) <- PalaceHandlers.handleUserLogonNotification clientState connection messageConverters refIdToUserIdMapping header
+    GUI.appendMessage (GUI.logWindow gui) $ Messages.makeRoomAnnouncement message
+    return state
     
-handleUserList :: Net.Communicators -> Messages.Header -> IO ()
-handleUserList communicators header =
-  do
-    Inbound.readUserList communicators header
-    Log.debugM "Incoming.Message.GotUserList" $ "Received user list."
-    return ()
-    {- OpenPalace does:
-         currentRoom.removeAllUsers();
-    -}
+handleMediaServerInfo :: State.Connected -> Messages.Header -> IO State.Connected
+handleMediaServerInfo clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
+  PalaceHandlers.handleMediaServerInfo clientState connection header
 
-handleNewUserNotification :: Net.Communicators -> Messages.Header -> IO ()
-handleNewUserNotification communicators header =
-  do
-    Inbound.readNewUserNotification communicators header
-    Log.debugM "Incoming.Message.UserNew" $ "Received new user notification."
-    return ()
-    {- OpenPalace does:
-         PalaceSoundPlayer.getInstance().playConnectionPing();
-         And if one's self entered:
-         if (needToRunSignonHandlers) {  palaceController.triggerHotspotEvents(IptEventHandler.TYPE_SIGNON);
-					 needToRunSignonHandlers = false; }
-         palaceController.triggerHotspotEvents(IptEventHandler.TYPE_ENTER);
-    -}
+ -- room name, background image, overlay images, props, hotspots, draw commands
+handleRoomDescription :: State.Connected -> Messages.Header -> IO State.Connected
+handleRoomDescription clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
+  PalaceHandlers.handleRoomDescription clientState connection messageConverters header
 
-handleTalk :: GUI.Components -> Net.Communicators -> Messages.Header -> Messages.ChatMode -> IO ()
-handleTalk gui communicators header mode =
+handleUserList :: State.Connected -> Messages.Header -> IO State.Connected
+handleUserList clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
+  PalaceHandlers.handleUserList clientState connection header
+
+handleNewUserNotification :: State.Connected -> Messages.Header -> IO State.Connected
+handleNewUserNotification clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
+  PalaceHandlers.handleNewUserNotification clientState connection header
+
+handleTalk :: State.Connected -> Messages.Header -> Messages.ChatMode -> IO State.Connected
+handleTalk clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header mode =
   do
-    chat <- Inbound.readTalk communicators refIdToUserIdMapping header mode
-    Log.debugM "Incoming.Message.UnencryptedTalk" (show chat)
+    let gui = State.guiState clientState
+    (chat, state) <- PalaceHandlers.handleTalk clientState connection refIdToUserIdMapping header mode  -- TODO get mapping out of global state
     GUI.appendMessage (GUI.logWindow gui) chat
-
     -- TODO send talk and user (and message type) to chat balloon in GUI
     -- TODO send talk to script event handler when there is scripting
-    return ()
-
-handleEncodedTalk :: GUI.Components -> Net.Communicators -> Messages.Header -> Messages.ChatMode -> IO ()
-handleEncodedTalk gui communicators header mode =
+    return state
+    
+handleEncodedTalk :: State.Connected -> Messages.Header -> Messages.ChatMode -> IO State.Connected
+handleEncodedTalk clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header mode =
   do
-    chat <- Inbound.readEncodedTalk communicators refIdToUserIdMapping header mode
-    Log.debugM "Incoming.Message.EncryptedTalk" (show chat)
+    let gui = State.guiState clientState
+    -- TODO get user mapping out of global state
+    (chat, state) <- PalaceHandlers.handleEncodedTalk clientState connection messageConverters refIdToUserIdMapping header mode
     GUI.appendMessage (GUI.logWindow gui) chat
-
     -- TODO send talk and user (and message type) to chat balloon in GUI
     -- TODO send talk to script event handler when there is scripting
-    return ()
+    return state
+    
+handleMovement :: State.Connected -> Messages.Header -> IO State.Connected
+handleMovement clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
+  PalaceHandlers.handleMovement clientState connection messageConverters refIdToUserIdMapping header
 
-handleMovement :: GUI.Components -> Net.Communicators -> Messages.Header -> IO ()
-handleMovement gui communicators header = 
-  do
-    movement <- Inbound.readMovement communicators refIdToUserIdMapping header 
-    Log.debugM "Incoming.Message.EncryptedTalk" (show movement)
-    -- TODO tell the GUI to move the user
-    -- TODO send action to script event handler when there is scripting?
-    return ()
+handleUnknownMessage :: State.Connected -> Messages.Header -> IO State.Connected
+handleUnknownMessage  clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
+  PalaceHandlers.handleUnknownMessage clientState connection header
 
-handleUnknownMessage :: Net.Communicators -> Messages.Header -> IO ()
-handleUnknownMessage communicators header = Inbound.readUnknown communicators header
 
-roomAnnouncementUserId = Messages.UserId { Messages.userRef = 0, Messages.userName = "Announcement" }
-refIdToUserIdMapping = Map.fromList [ (0, roomAnnouncementUserId) ]
 
-makeRoomAnnouncement :: String -> Messages.Communication
-makeRoomAnnouncement message =
-  Messages.Communication {
-    Messages.speaker = roomAnnouncementUserId,
-    Messages.target = Nothing,
-    Messages.message = message,
-    Messages.chatMode = Messages.Announcement
-  }
+-- TODO This needs to live in the global state
+refIdToUserIdMapping :: Map.Map Int Messages.UserId
+refIdToUserIdMapping = Map.fromList [ (0, Messages.roomAnnouncementUserId) ]
+
+
+type MediaServer = String
+type BackgroundImage = String
+loadRoomBackgroundImage :: MediaServer -> BackgroundImage -> IO ()
+loadRoomBackgroundImage mediaServer backgroundImage =
+  -- width="{backgroundImage.width}" height="{backgroundImage.height}"	minWidth="512" minHeight="384"
+  -- HTTP request the image : judge success or failure -- try again if fail
+  -- if success -- read the image in its native format 
+  -- pass the result to the GUI which will have to know how to paint it from that format (Gtk-specific)
+  -- NOTE if this is browser-based then we can just set the image source... can we abstract this?
+
+  return ()

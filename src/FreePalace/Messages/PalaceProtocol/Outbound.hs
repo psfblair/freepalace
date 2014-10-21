@@ -1,4 +1,4 @@
-module FreePalace.Messages.Outbound where
+module FreePalace.Messages.PalaceProtocol.Outbound where
 
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as LazyByteString
@@ -7,16 +7,14 @@ import Data.Word
 import Control.Applicative
 
 import qualified FreePalace.Messages as Messages
-import qualified FreePalace.Messages.Obfuscate as Obfuscate
-import FreePalace.Net.Types as Net
+import qualified FreePalace.Messages.PalaceProtocol.Obfuscate as Obfuscate
+import qualified FreePalace.Net.Send as Send
 import FreePalace.Net.Utils
 
-loginMessage :: Net.Translators -> Messages.UserId -> LazyByteString.ByteString
-loginMessage translators userId =
-  let intsToBuilder = Net.intsToByteStringBuilder translators
-      shortsToBuilder = Net.shortsToByteStringBuilder translators
-      stringBuilder = Net.toWin1252ByteStringBuilder translators
-      byteBuilder = Net.toSingleByteBuilder translators
+loginMessage :: ([Int] -> Builder.Builder) -> ([Word16] -> Builder.Builder) -> Messages.UserId -> LazyByteString.ByteString
+loginMessage intsToBuilder shortsToBuilder userId =
+  let stringBuilder = Send.toWin1252ByteStringBuilder 
+      byteBuilder = Send.toSingleByteBuilder
       
       msgTypeId = Messages.messageTypeId Messages.Logon
       messageLength = 128
@@ -60,13 +58,10 @@ loginMessage translators userId =
 
   in Builder.toLazyByteString builder
 
-chatMessage :: Net.Translators -> Messages.Communication -> LazyByteString.ByteString
-chatMessage translators communication =
+chatMessage :: ([Int] -> Builder.Builder) -> ([Word16] -> Builder.Builder) -> Messages.Communication -> LazyByteString.ByteString
+chatMessage intsToBuilder shortsToBuilder communication =
   do
-    let intsToBuilder = Net.intsToByteStringBuilder translators
-        shortsToBuilder = Net.shortsToByteStringBuilder translators
-        
-        encoded = Obfuscate.obfuscate $ Messages.message communication
+    let encoded = Obfuscate.obfuscate $ Messages.message communication
         messageLength = fromIntegral $ LazyByteString.length encoded
         userRefId = Messages.userRef $ Messages.speaker communication
         header = case Messages.target communication of

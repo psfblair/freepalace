@@ -25,19 +25,19 @@ readHeader readNextInt =
       Messages.messageRefNumber = referenceNumber
     }
 
-readNullTerminatedTextFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -> Net.IncomingByteSource -> Int -> IO String
-readNullTerminatedTextFromNetwork endianConverter byteSource numberOfCharacters =
+readNullTerminatedTextFromNetwork :: Net.IncomingByteSource -> Int -> IO String
+readNullTerminatedTextFromNetwork byteSource numberOfCharacters =
   do
-    chars <- readTextFromNetwork endianConverter byteSource numberOfCharacters
+    chars <- readTextFromNetwork byteSource numberOfCharacters
     return $ init chars   -- throw away last byte (null terminator)
   
 -- Assume Win-1252 characters. OpenPalace seems to let user select UTF-8 as well; not sure how that works.
-readTextFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -> Net.IncomingByteSource -> Int -> IO String
-readTextFromNetwork endianConverter byteSource numberOfCharacters =
+readTextFromNetwork ::  Net.IncomingByteSource -> Int -> IO String
+readTextFromNetwork byteSource numberOfCharacters =
   sequence $ take numberOfCharacters $ repeat $ readCharFromNetwork byteSource
     
 -- TODO Deal with IOErrors somewhere up the stack
-readIntsFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -> Net.IncomingByteSource -> Int -> IO [Int]
+readIntsFromNetwork :: Get.Get Word32 -> Net.IncomingByteSource -> Int -> IO [Int]
 readIntsFromNetwork endianConverter byteSource numberOfWords =
   sequence $ take numberOfWords $ repeat $ readIntFromNetwork endianConverter byteSource
 
@@ -47,13 +47,13 @@ readBytesFromNetwork byteSource numberOfBytes =
 
 {- IMPLEMENTATION-SPECIFIC -}
 -- TODO FIX MAKE THIS USE getWord32le or be depending on endianness, and pass that in
-readIntFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -> Net.IncomingByteSource -> IO Int
+readIntFromNetwork :: Get.Get Word32 -> Net.IncomingByteSource -> IO Int
 readIntFromNetwork endianConverter (Net.SocketByteSource socket) =
-  fromIntegral <$> Get.runGet Get.getWord32be <$> endianConverter <$> NetworkLazyByteString.recv socket 4
+  fromIntegral <$> Get.runGet endianConverter <$> NetworkLazyByteString.recv socket 4
 
-readShortFromNetwork :: (LazyByteString.ByteString -> LazyByteString.ByteString) -> Net.IncomingByteSource -> IO Word16
+readShortFromNetwork :: Get.Get Word16 -> Net.IncomingByteSource -> IO Word16
 readShortFromNetwork endianConverter (Net.SocketByteSource socket) =
-  Get.runGet Get.getWord16be <$> endianConverter <$> NetworkLazyByteString.recv socket 2
+  Get.runGet endianConverter <$> NetworkLazyByteString.recv socket 2
   
 readCharFromNetwork :: Net.IncomingByteSource -> IO Char
 readCharFromNetwork (Net.SocketByteSource socket) =

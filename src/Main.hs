@@ -7,8 +7,7 @@ import System.Log.Logger
 import qualified FreePalace.Handlers as Handlers
 import qualified FreePalace.GUI.Gtk as Gtk
 import qualified FreePalace.GUI as GUI
-import qualified FreePalace.Net as Net
-
+import qualified FreePalace.State as State
 
 import Paths_freepalace(getDataFileName)
 
@@ -17,6 +16,9 @@ main = withSocketsDo $ do
   updateGlobalLogger rootLoggerName (setLevel DEBUG)
   dataFileName <- getDataFileName "freepalace.resources.glade"
   guiComponents <- Gtk.init dataFileName
-  let connectionRequestHandler = Handlers.handleConnectRequested guiComponents Net.socketConnectors
+  let initialState = State.DisconnectedState (State.Disconnected guiComponents) 
+      connectionRequestHandler = Handlers.handleConnectRequested initialState State.PalaceProtocol
   GUI.initializeGUI guiComponents connectionRequestHandler
   Gtk.start
+
+
