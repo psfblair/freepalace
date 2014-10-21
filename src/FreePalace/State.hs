@@ -51,7 +51,7 @@ data HostState = HostState {
   , roomListState :: RoomListState
   , userListState :: UserListState
   , logState :: LogState
-  , currentRoomState :: CurrentRoomState
+  , currentRoomState :: Maybe CurrentRoomState
   }
 
 
@@ -62,7 +62,7 @@ data LogState = EmptyLog | LogState {
   logEntry :: Messages.Communication
   }
 
-data CurrentRoomState =  NoCurrentRoom | CurrentRoomState {
+data CurrentRoomState =  CurrentRoomState {
     roomId :: Int
   , roomName :: String
   , roomBackgroundImageName :: String
@@ -105,7 +105,7 @@ initialHostStateFor hostName portid = HostState {
   , roomListState = EmptyRoomList
   , userListState = EmptyUserList
   , logState = EmptyLog
-  , currentRoomState = NoCurrentRoom
+  , currentRoomState = Nothing
   }
 
 withMediaServerInfo :: Connected -> Net.URI -> Connected
