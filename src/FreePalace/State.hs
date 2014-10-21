@@ -43,7 +43,7 @@ data PalaceMessageConverters = PalaceMessageConverters {
   , palaceIntReader :: Get.Get Word32
   }
 
-data HostState = NoHost | HostState {
+data HostState = HostState {
     hostname :: Net.Hostname
   , portId :: Net.PortId
   , mediaServer :: Maybe Net.URI
