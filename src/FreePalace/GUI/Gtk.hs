@@ -161,47 +161,12 @@ wrapLogWindow gui =
                            return () -- TODO store in message log for saving later
   }
 
-
--- TODO: Problem with background: Will image resize when window is resized?
+-- TODO: Keep pixbuf around, redraw to scale when window is resized
 wrapDrawingArea :: Image -> GUI.Canvas
 wrapDrawingArea roomImage = GUI.Canvas {
   GUI.displayBackground = \imagePath ->
                            do
-                             -- Why TF doesn't this work (and not with Widget or anything else)
-                             -- width <- widgetGetAllocatedWidth roomImage 
-                             -- height <- widgetGetAllocatedHeight roomImage
                              (Events.Rectangle _  _ width height) <- Widget.widgetGetAllocation roomImage 
                              pixbuf <- Pixbuf.pixbufNewFromFileAtScale imagePath width height True
                              Image.imageSetFromPixbuf roomImage pixbuf
   }
-
-{-                            
-wrapDrawingArea :: Image -> GUI.Canvas
-wrapDrawingArea roomImage = GUI.Canvas {
-  GUI.displayBackground = \image ->
-                           do
-                             let width = 
-                                 height = 
-                                 hasAlpha = false
-                                 bitsPerSample = 8
-                                 rowOffset = width * 3 -- "row stride," i.e. the number of bytes between rows; I think that means the byte-width of a row
-                             img_ptr <- newArray (map CUChar image)
-                             -- Pixbuf only supports RGB right now
-                             pixbuf <- pixbufNewFromData img_ptr ColorspaceRgb hasAlpha bitsPerSample width height rowOffset
-                             Image.imageSetFromPixbuf roomImage pixbuf
-  }
-
--}
-
-{-
-Using PixbufLoader (run gdk-pixbuf-query-loaders to see if e.g., JPEG is installed.):
-
-    loader = gdk_pixbuf_loader_new ();
-    gdk_pixbuf_loader_write (loader, buffer, length, NULL); //length is length of buffer containing JPEG
-    pixbuf = gdk_pixbuf_loader_get_pixbuf (loader);
-    Graphics.UI.Gtk.Gdk.Drawable.drawPixbuf
--}
-{-
-JuicyPixels-3.1.7.1
-decodeImage :: ByteString -> Either String DynamicImage
--}

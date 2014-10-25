@@ -1,6 +1,5 @@
 module Main where
 
-import Control.Applicative
 import Network
 import System.Log.Logger
 
@@ -11,8 +10,8 @@ import qualified FreePalace.State as State
 
 import Paths_freepalace(getDataFileName)
 
--- TODO abstract out withSocketsDo?
-main = withSocketsDo $ do
+main :: IO ()
+main = withSocketsDo $ do -- TODO abstract out withSocketsDo?
   setLoggingLevels
   guiDataFileName <- getDataFileName "freepalace.resources.glade"
   guiComponents <- Gtk.init guiDataFileName
@@ -21,7 +20,7 @@ main = withSocketsDo $ do
   GUI.initializeGUI guiComponents connectionRequestHandler
   Gtk.start
 
-
+setLoggingLevels :: IO ()
 setLoggingLevels =
   do
     updateGlobalLogger rootLoggerName (setLevel DEBUG)
