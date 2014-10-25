@@ -17,6 +17,7 @@ import qualified FreePalace.GUI.Types as GUI
 import qualified FreePalace.Net as Netcom
 import qualified FreePalace.Net.Types as Net
 import qualified FreePalace.Handlers.PalaceProtocol as PalaceHandlers
+import qualified FreePalace.Media.Loader as MediaLoader
 
 data GUIEventHandlers = GUIEventHandlers {
   handleUserTextEntry :: IO ()
@@ -91,6 +92,7 @@ speak clientState@(State.Connected { State.protocolState = State.PalaceProtocolS
 dispatchIncomingMessages :: State.Connected -> IO ()
 dispatchIncomingMessages clientState =
   do
+    Log.debugM "Incoming.Message.Await" $ "Awaiting messages with state: " ++ (show clientState)    
     header <- readHeader clientState
     Log.debugM "Incoming.Message.Header" (show header)
     newState <- case Messages.messageType header of
@@ -100,7 +102,7 @@ dispatchIncomingMessages clientState =
       Messages.ServerInfo -> handleServerInfo clientState header
       Messages.UserStatus -> handleUserStatus clientState header
       Messages.UserLoggedOnAndMax -> handleUserLogonNotification clientState header
-      Messages.GotHttpServerLocation -> handleMediaServerInfo clientState header >> return clientState -- TODO need State monad!
+      Messages.GotHttpServerLocation -> handleMediaServerInfo clientState header
       Messages.GotRoomDescription -> handleRoomDescription clientState header
       Messages.GotUserList -> handleUserList clientState header
       Messages.RoomDescend -> return clientState -- this message just means we're done receiving the room description & user list
@@ -113,6 +115,7 @@ dispatchIncomingMessages clientState =
       Messages.Whisper -> handleEncodedTalk clientState header Messages.Whispering
       Messages.Move -> handleMovement clientState header
       _ -> handleUnknownMessage clientState header
+    Log.debugM "Incoming.Message.Processed" $ "Message processed. New state: " ++ (show newState)
     dispatchIncomingMessages newState
 
 readHeader :: State.Connected -> IO Messages.Header
@@ -156,13 +159,21 @@ handleMediaServerInfo :: State.Connected -> Messages.Header -> IO State.Connecte
 handleMediaServerInfo clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
   do
     (serverInfo, state) <- PalaceHandlers.handleMediaServerInfo clientState connection header
-    return $ State.withMediaServerInfo state serverInfo
+    let newState = State.withMediaServerInfo state serverInfo
+    loadRoomBackgroundImage newState
+    Log.debugM "Incoming.Message.HttpServerLocation.Processed" $ "New state: " ++ (show newState)
+    return newState
 
  -- room name, background image, overlay images, props, hotspots, draw commands
 handleRoomDescription :: State.Connected -> Messages.Header -> IO State.Connected
 handleRoomDescription clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
-  PalaceHandlers.handleRoomDescription clientState connection messageConverters header
-
+  do
+    (roomDescription, state) <- PalaceHandlers.handleRoomDescription clientState connection messageConverters header
+    let newState = State.withRoomDescription state roomDescription
+    loadRoomBackgroundImage newState
+    Log.debugM "Incoming.Message.GotRoomDescription.Processed" $ "New state: " ++ (show newState)
+    return newState
+    
 handleUserList :: State.Connected -> Messages.Header -> IO State.Connected
 handleUserList clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
   PalaceHandlers.handleUserList clientState connection header
@@ -206,15 +217,26 @@ handleUnknownMessage  clientState@(State.Connected { State.protocolState = State
 refIdToUserIdMapping :: Map.Map Int Messages.UserId
 refIdToUserIdMapping = Map.fromList [ (0, Messages.roomAnnouncementUserId) ]
 
-
-type MediaServer = String
-type BackgroundImage = String
-loadRoomBackgroundImage :: MediaServer -> BackgroundImage -> IO ()
-loadRoomBackgroundImage mediaServer backgroundImage =
-  -- width="{backgroundImage.width}" height="{backgroundImage.height}"	minWidth="512" minHeight="384"
-  -- HTTP request the image : judge success or failure -- try again if fail
-  -- if success -- read the image in its native format 
-  -- pass the result to the GUI which will have to know how to paint it from that format (Gtk-specific)
-  -- NOTE if this is browser-based then we can just set the image source... can we abstract this?
-
-  return ()
+-- TODO Special types for media server URI? And Background image (we want various permutations of BG image for various media types)
+-- TODO Do we want to reload this every time a new room description gets sent? How often does that happen?
+loadRoomBackgroundImage :: State.Connected -> IO State.Connected
+loadRoomBackgroundImage state =
+  do
+    let mediaServer = State.mediaServer $ State.hostState state
+        roomState = State.currentRoomState . State.hostState $ state
+        roomCanvas = GUI.roomCanvas $ State.guiState state
+    Log.debugM "Load.BackgroundImage" $ "Media server url: " ++ (show mediaServer)
+    Log.debugM "Load.BackgroundImage" $ "RoomState: " ++ (show roomState)
+    case (mediaServer, roomState) of
+     (Just mediaServerUrl, Just currentRoomState) ->
+       do
+         let imageName = State.roomBackgroundImageName currentRoomState
+             host = State.hostname $ State.hostState state
+             port = State.portId $ State.hostState state
+         Log.debugM "Load.BackgroundImage" $ "Fetching background image " ++ imageName ++ " from " ++ mediaServerUrl
+         possibleImagePath <- MediaLoader.fetchCachedBackgroundImagePath host port mediaServerUrl imageName
+         case possibleImagePath of
+           Just imagePath -> GUI.displayBackground roomCanvas imagePath
+           Nothing -> return ()
+         return state
+     (_, _) -> return state 

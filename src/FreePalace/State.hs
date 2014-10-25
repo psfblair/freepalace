@@ -16,7 +16,8 @@ data ClientState =
 
 data Disconnected = Disconnected {
     disconnectedGui :: GUI.Components
-  , disconnectedHostDirectory :: HostDirectory  
+  , disconnectedHostDirectory :: HostDirectory
+  , disconnectedSettings :: Settings
   }
 
 data Connected = Connected {
@@ -25,44 +26,55 @@ data Connected = Connected {
   , hostState :: HostState
   , hostDirectory :: HostDirectory
   , userState :: UserState
-  }
+  , settings :: Settings
+  } deriving Show
+
+data HostDirectory = HostDirectory deriving Show
+
+data Settings = Settings {
+    thisUserName :: String
+  -- TODO  maxCacheSize
+  -- TODO  roomDimensions
+  } deriving Show
 
 data Protocol = PalaceProtocol
 
 data ProtocolState = PalaceProtocolState PalaceConnection PalaceMessageConverters
+instance Show ProtocolState where
+   show _ = "ProtocolState"
 
 data PalaceConnection = PalaceConnection {
     palaceByteSource :: Net.IncomingByteSource
   , palaceByteSink :: Net.OutgoingByteSink
-  }
+  } 
 
 data PalaceMessageConverters = PalaceMessageConverters {
     palaceShortWriter :: Word16 -> Builder.Builder
   , palaceIntWriter :: Int32 -> Builder.Builder
   , palaceShortReader :: Get.Get Word16
   , palaceIntReader :: Get.Get Word32
-  }
+  } 
 
 data HostState = HostState {
     hostname :: Net.Hostname
   , portId :: Net.PortId
-  , mediaServer :: Maybe Net.URI
+  , mediaServer :: Maybe Net.URL
   -- TODO , serverVersion :: ServerVersion
-  , roomListState :: RoomListState
-  , userListState :: UserListState
-  , logState :: LogState
+  , roomList :: RoomList
+  , userList :: UserList
+  , chatLog :: ChatLog
   , currentRoomState :: Maybe CurrentRoomState
-  }
+  } deriving Show
 
 
-data RoomListState = EmptyRoomList
-data UserListState = EmptyUserList
-data LogState = EmptyLog | LogState {
+data RoomList = RoomList deriving Show
+data UserList = UserList deriving Show
+data ChatLog  = ChatLog {
   -- TODO logEntryTimestamp
-  logEntry :: Messages.Communication
-  }
+  logEntries :: [ Messages.Communication ]
+  } deriving Show
 
-data CurrentRoomState =  CurrentRoomState {
+data CurrentRoomState = CurrentRoomState {
     roomId :: Int
   , roomName :: String
   , roomBackgroundImageName :: String
@@ -74,9 +86,7 @@ data CurrentRoomState =  CurrentRoomState {
            -- Hotspots also manage a collection of vertices and a collection of hotspot states
   -- TODO loose props
   -- TODO draw commands
-  }
-
-data HostDirectory = HostDirectory
+  } deriving Show
 
 data UserState = NotLoggedIn { userName :: String }
                | LoggedIn    {
@@ -84,7 +94,7 @@ data UserState = NotLoggedIn { userName :: String }
   -- TODO props
   -- TODO sounds
   -- TODO settings
-  }
+  } deriving Show
 
 userIdFor :: UserState -> Int -> Messages.UserId
 userIdFor userState refId = Messages.UserId {
@@ -94,24 +104,40 @@ userIdFor userState refId = Messages.UserId {
                          LoggedIn    { userId = Messages.UserId { Messages.userName = name }} -> name 
   }
 
-defaultUserName :: String
-defaultUserName = "Haskell Curry" -- TODO allow user to set user name
+-- We will accept as legal characters A-Za-z0-9. - and _; any others will be encoded as url-encoded characters %20 etc. 
+defaultSettings :: Settings
+defaultSettings = Settings {
+    thisUserName = "Haskell Curry"  -- TODO allow user to set user name
+  }
 
 initialHostStateFor :: Net.Hostname -> Net.PortId -> HostState
 initialHostStateFor hostName portid = HostState {
     hostname = hostName
   , portId = portid
   , mediaServer = Nothing
-  , roomListState = EmptyRoomList
-  , userListState = EmptyUserList
-  , logState = EmptyLog
+  , roomList = RoomList
+  , userList = UserList
+  , chatLog = ChatLog []
   , currentRoomState = Nothing
   }
 
-withMediaServerInfo :: Connected -> Net.URI -> Connected
+withMediaServerInfo :: Connected -> Net.URL -> Connected
 withMediaServerInfo currentState mediaServerUri =
   currentState {
     hostState = (hostState currentState) {
        mediaServer = Just mediaServerUri
     }
   }
+
+-- TODO This may get more complicated if/when the current room state is affected by more than a RoomDescription message
+withRoomDescription :: Connected -> Messages.RoomDescription -> Connected
+withRoomDescription currentState roomDescription =
+  currentState {
+    hostState = (hostState currentState) {
+       currentRoomState = Just CurrentRoomState {
+            roomId = Messages.roomId roomDescription
+          , roomName = Messages.roomName roomDescription
+          , roomBackgroundImageName = Messages.roomBackgroundImageName roomDescription
+          }
+       }
+    }

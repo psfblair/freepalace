@@ -105,17 +105,17 @@ handleUserLogonNotification clientState connection messageConverters userMap hea
     Log.debugM  "Incoming.Message.UserLoggedOnAndMax" $  message ++ "  Population: " ++ (show totalUserCount)
     return (message, clientState)
 
-handleMediaServerInfo :: State.Connected -> State.PalaceConnection -> Messages.Header -> IO (Net.URI, State.Connected)
+handleMediaServerInfo :: State.Connected -> State.PalaceConnection -> Messages.Header -> IO (Net.URL, State.Connected)
 handleMediaServerInfo clientState connection header =  
   do
     let byteSource = State.palaceByteSource connection
     serverInfo <- PalaceInbound.readMediaServerInfo byteSource header
     Log.debugM "Incoming.Message.HttpServerLocation" $ "Media server: " ++ serverInfo
-    -- TODO if we already have a room description, load the media
     return (serverInfo, clientState)
 
  -- room name, background image, overlay images, props, hotspots, draw commands
-handleRoomDescription :: State.Connected -> State.PalaceConnection -> State.PalaceMessageConverters -> Messages.Header -> IO State.Connected
+handleRoomDescription :: State.Connected -> State.PalaceConnection -> State.PalaceMessageConverters ->
+                         Messages.Header -> IO (Messages.RoomDescription, State.Connected)
 handleRoomDescription clientState connection messageConverters header =  
   do
     let byteSource = State.palaceByteSource connection
@@ -123,9 +123,7 @@ handleRoomDescription clientState connection messageConverters header =
         shortReader = State.palaceShortReader messageConverters
     roomDescription <- PalaceInbound.readRoomDescription byteSource intReader shortReader header
     Log.debugM "Incoming.Message.GotRoomDescription" $ show roomDescription
-    -- If we have received the media server info, load the background image from the mediaServer using various permutations of backgroundImageName:
-       -- If the image name ends with .gif first try to use .png and then .jpg; otherwise use the original name
-
+    return (roomDescription, clientState)
   {- OpenPalace also does this when receiving these messages:
 	clearStatusMessage currentRoom
 	clearAlarms
@@ -135,7 +133,6 @@ handleRoomDescription clientState connection messageConverters header =
         Room.showAvatars = true -- scripting can hide all avatars
         Dispatch room change event for scripting
     -}
-    return clientState
 
 handleUserList :: State.Connected -> State.PalaceConnection -> Messages.Header -> IO State.Connected
 handleUserList clientState connection header =

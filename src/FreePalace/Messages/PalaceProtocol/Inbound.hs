@@ -91,7 +91,7 @@ readUserLogonNotification byteSource intReader header =
     
 readMediaServerInfo :: Net.IncomingByteSource -> Messages.Header -> IO String
 readMediaServerInfo byteSource header =
-  Receive.readTextFromNetwork byteSource $ Messages.messageSize header
+  Receive.readNullTerminatedTextFromNetwork byteSource $ Messages.messageSize header
 
 -- TODO Finish this
 readRoomDescription :: Net.IncomingByteSource -> Get.Get Word32 -> Get.Get Word16 -> Messages.Header -> IO Messages.RoomDescription
