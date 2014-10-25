@@ -3,21 +3,17 @@ module FreePalace.Media.Loader where
 import qualified Data.ByteString as ByteString
 import qualified Network.HTTP as HTTP
 import qualified Network.URI as URI ( parseURI, escapeURIString )
-import qualified Network.Stream as Stream
 import Control.Applicative
 import Control.Monad
 import Control.Exception
 import Data.List
 import Data.Char
 import Data.Maybe
-import System.IO
 import System.FilePath as Path
 import System.Directory as Directory
-import Text.Regex
 import System.Log.Logger as Log
 
 import qualified FreePalace.Net.Types as Net
-import qualified FreePalace.Media.Types as Media
 
 -- Cache directory may start with ~
 fetchCachedBackgroundImagePath :: Net.Hostname -> Net.PortId -> Net.URL -> Path.FilePath -> IO (Maybe Path.FilePath)
@@ -35,7 +31,7 @@ findCachedMedia host port url filename =
     let cachedFilePath = Path.combine cacheDirectory $ escapeFilename filename
     isCached <- doesFileExist cachedFilePath
     if isCached
-      then return $ Just cachedFilePath
+      then return $ Just cachedFilePath -- TODO Still need to see if the cached version is older than the one on the server
       else do
              possibleImage <- httpGet $ createResourceUrl url filename
              case possibleImage of
