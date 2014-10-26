@@ -3,10 +3,9 @@ module FreePalace.Messages.PalaceProtocol.Inbound where
 import           Control.Applicative
 import qualified Data.Binary.Get                              as Get
 import qualified Data.Convertible.Base                        as Convert
-import           Data.Convertible.Instances.Num
-import qualified Data.Map                                     as Map
 import           Data.Word
 
+import qualified FreePalace.Domain                            as Domain
 import qualified FreePalace.Handlers.Types                    as Handlers
 import qualified FreePalace.Messages                          as Messages
 import qualified FreePalace.Messages.PalaceProtocol.Obfuscate as Illuminator
@@ -85,7 +84,7 @@ readUserStatus byteSource shortReader header =
     _ <- readBytes trailingBytes
     return userFlags
 
-readUserLogonNotification :: Net.IncomingByteSource -> Get.Get Word32 -> Messages.Header -> IO (Handlers.UserRefId, Handlers.PalaceUserCount)
+readUserLogonNotification :: Net.IncomingByteSource -> Get.Get Word32 -> Messages.Header -> IO (Domain.UserRefId, Handlers.PalaceUserCount)
 readUserLogonNotification byteSource intReader header =
   do
     let readInt = Receive.readIntFromNetwork intReader byteSource

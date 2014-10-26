@@ -1,19 +1,18 @@
 module FreePalace.Handlers where
 
 import           Control.Concurrent
-import           Control.Exception
 import qualified Data.Map                           as Map
 import qualified System.Log.Logger                  as Log
 
+import qualified FreePalace.Domain                  as Domain
 import qualified FreePalace.GUI.Types               as GUI
 import qualified FreePalace.Handlers.PalaceProtocol as PalaceHandlers
+import qualified FreePalace.Handlers.State          as StateHandlers
+import qualified FreePalace.Handlers.Types          as HandlerTypes
 import qualified FreePalace.Media.Loader            as MediaLoader
 import qualified FreePalace.Messages                as Messages
 import qualified FreePalace.Net                     as Net
 import qualified FreePalace.State                   as State
-import qualified FreePalace.Domain as Domain
-import qualified FreePalace.Handlers.State as StateHandlers
-import qualified FreePalace.Handlers.Types as HandlerTypes
 
 data GUIEventHandlers = GUIEventHandlers {
   handleUserTextEntry :: IO ()
@@ -132,7 +131,7 @@ handleAlternateLogonReply clientState =
     case State.protocolState clientState of
      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleAlternateLogonReply connection messageConverters
     return clientState
-    
+
 handleServerVersion :: State.Connected -> Messages.Header -> IO State.Connected
 handleServerVersion clientState header =
   do
@@ -228,7 +227,7 @@ handleEncodedTalk clientState header mode =
     let gui = State.guiState clientState
     chatData <- case State.protocolState clientState of
       State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleEncodedTalk connection messageConverters header
-    let communication = communicationFromChatData chatData mode      
+    let communication = communicationFromChatData chatData mode
     Log.debugM "Incoming.Message.EncryptedTalk" (show communication)
     GUI.appendMessage (GUI.logWindow gui) communication
     -- TODO send talk and user (and message type) to chat balloon in GUI
@@ -260,10 +259,10 @@ handleUnknownMessage clientState header =
 userIdFrom :: Messages.Header -> Map.Map Domain.UserRefId Domain.UserId -> Domain.UserId
 userIdFrom header userMap =
   let refNumber = Messages.messageRefNumber header
-  in userIdFor userMap refNumber 
+  in userIdFor userMap refNumber
 
 userIdFor :: Map.Map Domain.UserRefId Domain.UserId -> Domain.UserRefId -> Domain.UserId
-userIdFor userMap refId = 
+userIdFor userMap refId =
   let defaultUserId = Domain.UserId { Domain.userRef = refId, Domain.userName = "User #" ++ show refId }
   in Map.findWithDefault defaultUserId refId userMap
 
@@ -282,7 +281,7 @@ communicationFromChatData chatData chatMode =
     Domain.message = HandlerTypes.chatMessage chatData,
     Domain.chatMode = chatMode
   }
-  
+
 makeRoomAnnouncement :: String -> Domain.Communication
 makeRoomAnnouncement message =
   Domain.Communication {

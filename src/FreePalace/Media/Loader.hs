@@ -3,17 +3,17 @@ module FreePalace.Media.Loader where
 import           Control.Applicative
 import           Control.Exception
 import           Control.Monad
-import qualified Data.ByteString      as ByteString
+import qualified Data.ByteString     as ByteString
 import           Data.Char
 import           Data.List
 import           Data.Maybe
-import qualified Network.HTTP         as HTTP
-import qualified Network.URI          as Network
-import           System.Directory     as Directory
-import           System.FilePath      as Path
-import           System.Log.Logger    as Log
+import qualified Network.HTTP        as HTTP
+import qualified Network.URI         as Network
+import           System.Directory    as Directory
+import           System.FilePath     as Path
+import           System.Log.Logger   as Log
 
-import qualified FreePalace.Net as Net
+import qualified FreePalace.Net      as Net
 
 -- Cache directory may start with ~
 fetchCachedBackgroundImagePath :: Net.Hostname -> Net.PortId -> Network.URI -> Path.FilePath -> IO (Maybe Path.FilePath)
@@ -82,7 +82,7 @@ httpGet url =
       Left _ -> return Nothing
     where
       request = HTTP.defaultGETRequest_ url
-      handleFailureToGetResponseBody = \(SomeException exception) -> return Nothing
+      handleFailureToGetResponseBody = \(SomeException _) -> return Nothing
       tryGetResponseBody result = catch (Just <$> HTTP.getResponseBody result) handleFailureToGetResponseBody
 
 

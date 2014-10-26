@@ -1,18 +1,18 @@
 module FreePalace.Handlers.PalaceProtocol where
 
+import           Control.Applicative
 import           Control.Exception
-import Control.Applicative
+import qualified FreePalace.Domain                           as Domain
+import qualified FreePalace.Handlers.State                   as Handlers
+import qualified FreePalace.Handlers.Types                   as HandlerTypes
 import qualified FreePalace.Messages                         as Messages
 import qualified FreePalace.Messages.PalaceProtocol.Inbound  as PalaceInbound
 import qualified FreePalace.Messages.PalaceProtocol.Outbound as PalaceOutbound
+import qualified FreePalace.Net                              as Net
 import qualified FreePalace.Net.PalaceProtocol.Connect       as Connect
 import qualified FreePalace.Net.Send                         as Send
-import qualified FreePalace.Net                              as Net
 import qualified FreePalace.State                            as State
 import qualified System.Log.Logger                           as Log
-import qualified FreePalace.Domain as Domain
-import qualified FreePalace.Handlers.State as Handlers
-import qualified FreePalace.Handlers.Types as HandlerTypes
 
 handleConnectRequested :: State.ClientState -> Net.Hostname -> Net.PortId -> IO State.ClientState
 handleConnectRequested clientState host port =
@@ -35,7 +35,7 @@ disconnect (State.ConnectedState priorState@(State.Connected { State.protocolSta
           settings = State.settings priorState
 
 connect :: State.Disconnected -> Net.Hostname -> Net.PortId -> IO State.Connected
-connect priorState host port = 
+connect priorState host port =
   do
     connection <- Connect.connect host port
     return State.Connected {
@@ -46,7 +46,7 @@ connect priorState host port =
     , State.userState = State.NotLoggedIn { State.username = State.thisUserName . State.disconnectedSettings $ priorState }
     , State.settings = State.disconnectedSettings priorState
     }
-    
+
 handleHandshake :: State.Connected -> Net.PalaceConnection -> Net.PalaceMessageConverters -> IO State.Connected
 handleHandshake clientState connection messageConverters =
   do
@@ -119,7 +119,7 @@ handleUserStatus connection messageConverters header =
         shortReader = Net.palaceShortReader messageConverters
     PalaceInbound.readUserStatus byteSource shortReader header
 
-handleUserLogonNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO (HandlerTypes.UserRefId, HandlerTypes.PalaceUserCount)
+handleUserLogonNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO (Domain.UserRefId, HandlerTypes.PalaceUserCount)
 handleUserLogonNotification connection messageConverters header =
   do
     let byteSource = Net.palaceByteSource connection

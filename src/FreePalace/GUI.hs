@@ -1,9 +1,7 @@
 module FreePalace.GUI where
 
-import qualified FreePalace.State as State
-import qualified FreePalace.Handlers as Handlers
-import qualified FreePalace.Net as Net
-import FreePalace.GUI.Types
+import           FreePalace.GUI.Types
+import qualified FreePalace.Net       as Net
 
 initializeGUI :: Components -> (Net.Hostname -> Net.PortId -> IO ()) -> IO ()
 initializeGUI guiComponents handler =
@@ -22,7 +20,7 @@ setUpMainWindow guiComponents =
 setUpConnectDialog :: Components -> (Net.Hostname -> Net.PortId -> IO ()) -> IO ()
 setUpConnectDialog guiComponents connectHandler =
   do
-    let okButton = connectOk guiComponents 
+    let okButton = connectOk guiComponents
         okHandler = do
           host <- textValue $ connectHostEntry guiComponents
           port <- textValue $ connectPortEntry guiComponents
@@ -30,12 +28,12 @@ setUpConnectDialog guiComponents connectHandler =
 
 
     onButtonClick okButton okHandler
-    
+
     let cancelButton = connectCancel guiComponents
         cancelHandler = closeDialog $ connectDialog guiComponents
 
     onButtonClick cancelButton cancelHandler
- 
+
 showConnectDialog :: Components -> IO ()
 showConnectDialog guiComponents = showDialog $ connectDialog guiComponents
 

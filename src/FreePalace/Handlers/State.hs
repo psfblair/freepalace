@@ -1,10 +1,10 @@
 module FreePalace.Handlers.State where
 
-import FreePalace.State
-import FreePalace.Domain as Domain
-import FreePalace.Net as Net
-import FreePalace.Handlers.Types as Handlers
-import Network.URI as Network
+import           FreePalace.Domain         as Domain
+import           FreePalace.Handlers.Types as Handlers
+import           FreePalace.Net            as Net
+import           FreePalace.State
+import           Network.URI               as Network
 
 -- We will accept as legal characters A-Za-z0-9. - and _; any others will be encoded as url-encoded characters %20 etc.
 defaultSettings :: Settings

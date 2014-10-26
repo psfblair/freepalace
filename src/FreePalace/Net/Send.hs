@@ -1,17 +1,17 @@
 module FreePalace.Net.Send where
 
-import qualified Network.Socket.ByteString.Lazy as NetworkLazyByteString 
-import qualified Data.ByteString.Lazy.Builder as Builder
-import qualified Data.ByteString.Lazy as LazyByteString
-import Data.Word
-import Data.Int
-import Data.Encoding
-import Data.Encoding.CP1252
-import Data.Monoid
-import Control.Applicative
+import           Control.Applicative
+import qualified Data.ByteString.Lazy           as LazyByteString
+import qualified Data.ByteString.Lazy.Builder   as Builder
+import           Data.Encoding
+import           Data.Encoding.CP1252
+import           Data.Int
+import           Data.Monoid
+import           Data.Word
+import qualified Network.Socket.ByteString.Lazy as NetworkLazyByteString
 
-import qualified FreePalace.Net as Net 
-import FreePalace.Net.Utils
+import qualified FreePalace.Net                 as Net
+import           FreePalace.Net.Utils
 
 writeBytesToSink :: Net.OutgoingByteSink -> LazyByteString.ByteString -> IO ()
 writeBytesToSink (Net.SocketByteSink socket) byteString =

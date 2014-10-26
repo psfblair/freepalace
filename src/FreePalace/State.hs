@@ -1,9 +1,9 @@
 module FreePalace.State where
 
-import qualified FreePalace.Domain            as Domain
-import qualified FreePalace.GUI.Types         as GUI
-import qualified FreePalace.Net               as Net
-import qualified Network.URI as Network
+import qualified FreePalace.Domain    as Domain
+import qualified FreePalace.GUI.Types as GUI
+import qualified FreePalace.Net       as Net
+import qualified Network.URI          as Network
 
 data ClientState =
     DisconnectedState Disconnected

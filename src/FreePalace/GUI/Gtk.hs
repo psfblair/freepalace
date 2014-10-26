@@ -1,32 +1,32 @@
 module FreePalace.GUI.Gtk where
 
-import Graphics.UI.Gtk
-import qualified Graphics.UI.Gtk.Display.Image as Image
+import           Control.Concurrent
+import           Graphics.UI.Gtk
 import qualified Graphics.UI.Gtk.Abstract.Widget as Widget
-import qualified Graphics.UI.Gtk.Gdk.Pixbuf as Pixbuf
-import qualified Graphics.UI.Gtk.Gdk.Events as Events
-import Control.Concurrent
+import qualified Graphics.UI.Gtk.Display.Image   as Image
+import qualified Graphics.UI.Gtk.Gdk.Events      as Events
+import qualified Graphics.UI.Gtk.Gdk.Pixbuf      as Pixbuf
 
-import qualified FreePalace.GUI.Types as GUI
-import qualified FreePalace.Domain as Domain
+import qualified FreePalace.Domain               as Domain
+import qualified FreePalace.GUI.Types            as GUI
 
 data GtkGui = GtkGui {
-    mainWindow :: Window
+    mainWindow       :: Window
 
-  , connectDialog :: Dialog
+  , connectDialog    :: Dialog
   , connectHostEntry :: Entry
   , connectPortEntry :: Entry
-  , connectOk :: Button
-  , connectCancel :: Button
-   
-  , logWindow :: Window
-  , logTextView :: TextView
-  , logTextBuffer :: TextBuffer
-  
-  , chatEntry :: Entry
-  , chatButton :: Button
+  , connectOk        :: Button
+  , connectCancel    :: Button
 
-  , roomImage :: Image
+  , logWindow        :: Window
+  , logTextView      :: TextView
+  , logTextBuffer    :: TextBuffer
+
+  , chatEntry        :: Entry
+  , chatButton       :: Button
+
+  , roomImage        :: Image
 }
 
 init :: FilePath -> IO (GUI.Components)
@@ -62,11 +62,11 @@ loadGladeComponents gladepath =
     guiLogTextBuffer <- builderGetObject builder castToTextBuffer "logTextBuffer"
 
     guiChatEntry <- builderGetObject builder castToEntry "chatEntry"
-    widgetGrabFocus guiChatEntry 
+    widgetGrabFocus guiChatEntry
     guiChatButton <- builderGetObject builder castToButton "chatButton"
 
     guiRoomImage <- builderGetObject builder castToImage "roomImage"
-    
+
     return $ GtkGui guiMainWindow
       guiConnectDialog guiConnectHostEntry guiConnectPortEntry guiConnectOkButton guiConnectCancelButton
       guiLogWindow guiLogTextView guiLogTextBuffer
@@ -77,15 +77,15 @@ wrapComponents :: GtkGui -> GUI.Components
 wrapComponents gui =
   GUI.Components {
       GUI.mainWindow = wrapMainWindow gui
-    
+
     , GUI.connectDialog = wrapConnectDialog gui
     , GUI.connectHostEntry = wrapEntry $ connectHostEntry gui
     , GUI.connectPortEntry = wrapEntry $ connectPortEntry gui
     , GUI.connectOk = wrapButton $ connectOk gui
     , GUI.connectCancel = wrapButton $ connectCancel gui
-    
+
     , GUI.logWindow = wrapLogWindow gui
-    
+
     , GUI.chatEntry = wrapEntry $ chatEntry gui
     , GUI.chatSend = wrapButton $ chatButton gui
 
@@ -125,7 +125,7 @@ wrapEntry entry =
   }
 
 wrapButton :: Button -> GUI.Button
-wrapButton button = 
+wrapButton button =
   GUI.Button {
     GUI.onButtonClick =
        \handler -> do
@@ -151,7 +151,7 @@ wrapLogWindow gui =
                                stringToLog = user ++ ":\t" ++ message ++ "\n"
                            iter <- textBufferGetEndIter textBuffer
                            textBufferInsert textBuffer iter stringToLog
-                           _ <- textViewScrollToIter textView iter 0.0 Nothing  
+                           _ <- textViewScrollToIter textView iter 0.0 Nothing
                            return () -- TODO store in message log for saving later
   }
 
@@ -160,7 +160,7 @@ wrapDrawingArea :: Image -> GUI.Canvas
 wrapDrawingArea roomBgImage = GUI.Canvas {
   GUI.displayBackground = \imagePath ->
                            do
-                             (Events.Rectangle _  _ width height) <- Widget.widgetGetAllocation roomBgImage 
+                             (Events.Rectangle _  _ width height) <- Widget.widgetGetAllocation roomBgImage
                              pixbuf <- Pixbuf.pixbufNewFromFileAtScale imagePath width height True
                              Image.imageSetFromPixbuf roomBgImage pixbuf
   }

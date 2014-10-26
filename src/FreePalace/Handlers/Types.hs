@@ -2,34 +2,27 @@ module FreePalace.Handlers.Types where
 
 import           Data.Word
 import qualified FreePalace.Domain as Domain
-import qualified FreePalace.Net    as Net
 
-data HandlerUpdate = HandshakeUpdate { userRefId :: Domain.UserRefId, converters :: Net.PalaceMessageConverters }
-
-type UserRefId = Int
 type UserFlags = Word16
 type PlaceName = String
 type ServerPermissions = Int
 type PalaceUserCount = Int
 type ChatMessage = String
-type RoomId = Int
-type RoomName = String
-type ImageName = String
 type PuidCounter = Int
 type PuidCrc = Int
 
 data ChatData = ChatData {
-    chatSource    :: UserRefId
-  , chatRecipient :: Maybe UserRefId
+    chatSource    :: Domain.UserRefId
+  , chatRecipient :: Maybe Domain.UserRefId
   , chatMessage   :: String
   }
 
-data MovementData = MovementData { x :: Int, y :: Int, userWhoMoved :: UserRefId } deriving Show
+data MovementData = MovementData { x :: Int, y :: Int, userWhoMoved :: Domain.UserRefId } deriving Show
 
 data RoomDescription = RoomDescription {
-    roomDescId         :: RoomId
-  , roomDescName       :: RoomName
-  , roomDescBackground :: ImageName
+    roomDescId         :: Domain.RoomId
+  , roomDescName       :: Domain.RoomName
+  , roomDescBackground :: Domain.ImageFilename
 } deriving Show
 {- Ultimately RoomDescription should also contain:
    -- overlay images - id, name, transpatency index

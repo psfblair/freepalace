@@ -1,24 +1,23 @@
 module FreePalace.Messages.PalaceProtocol.Outbound where
 
-import qualified Data.ByteString.Builder as Builder
-import qualified Data.ByteString.Lazy as LazyByteString
-import Data.Bits
-import Data.Word
-import Control.Applicative
+import           Data.Bits
+import qualified Data.ByteString.Builder                      as Builder
+import qualified Data.ByteString.Lazy                         as LazyByteString
+import           Data.Word
 
-import qualified FreePalace.Messages as Messages
+import qualified FreePalace.Domain                            as Domain
+import qualified FreePalace.Messages                          as Messages
 import qualified FreePalace.Messages.PalaceProtocol.Obfuscate as Obfuscate
-import qualified FreePalace.Net.Send as Send
-import qualified FreePalace.Domain as Domain
-import FreePalace.Net.Utils
+import qualified FreePalace.Net.Send                          as Send
+import           FreePalace.Net.Utils
 
 type UserName = String
 
 loginMessage :: ([Int] -> Builder.Builder) -> ([Word16] -> Builder.Builder) -> Domain.UserId -> LazyByteString.ByteString
 loginMessage intsToBuilder shortsToBuilder userId =
-  let stringBuilder = Send.toWin1252ByteStringBuilder 
+  let stringBuilder = Send.toWin1252ByteStringBuilder
       byteBuilder = Send.toSingleByteBuilder
-      
+
       msgTypeId = Messages.messageTypeId Messages.Logon
       messageLength = 128
       referenceNumber = 0
@@ -35,26 +34,26 @@ loginMessage intsToBuilder shortsToBuilder userId =
       totalElapsed = 0 -- no longer used
       demoLimit = 0    -- no longer used
       desiredRoomId = 0 :: Word16 --  Later maybe get the initial desired room from somewhere
-     
+
       reserved = stringBuilder "OPNPAL" -- The protocol spec lists these as reserved, and says nothing should be put in them.
                  -- However, the server records these 6 bytes in its log file.  So we'll exploit that to identify the client type.
                  -- We have to pretend to be Open Palace because newer servers use this to identify the client
-     
+
       uploadRequestedProtocolVersion = 0 -- ignored on server
       uploadCapabilities = uploadCapabilitiesAssetsPalace -- TODO This is a lie... for now (?)
-     
+
       -- We have to lie about our capabilities so that servers don't reject this as a hacked client.
       downloadCapabilities = downloadCapabilitiesAssetsPalace .|. downloadCapabilitiesFilesPalace .|. downloadCapabilitiesFilesHttp
-     
+
       upload2DEngineCapabilities = 0 -- Unused
       upload2dGraphicsCapabilities = 0 -- Unused
       upload3DEngineCapabilities = 0  -- Unused
-      
+
       builder =       (intsToBuilder     (msgTypeId : messageLength : referenceNumber : guestRegCodeCrc : guestRegCodeCounter : []))
                   .++ (byteBuilder        userNameLength)
                   .++ paddedUserName
                   .++ (intsToBuilder     (auxFlags : puidCounter : puidCrc : demoElapsed : totalElapsed : demoLimit : []))
-                  .++ (shortsToBuilder   (desiredRoomId : [])) 
+                  .++ (shortsToBuilder   (desiredRoomId : []))
                   .++ reserved
                   .++ (intsToBuilder     (uploadRequestedProtocolVersion : uploadCapabilities : downloadCapabilities : upload2DEngineCapabilities :
                                           upload2dGraphicsCapabilities : upload3DEngineCapabilities : []))
@@ -63,19 +62,18 @@ loginMessage intsToBuilder shortsToBuilder userId =
 
 chatMessage :: ([Int] -> Builder.Builder) -> ([Word16] -> Builder.Builder) -> Domain.Communication -> LazyByteString.ByteString
 chatMessage intsToBuilder shortsToBuilder communication =
-  do
-    let encoded = Obfuscate.obfuscate $ Domain.message communication
-        messageLength = fromIntegral $ LazyByteString.length encoded
-        userRefId = Domain.userRef $ Domain.speaker communication
-        header = case Domain.target communication of
-          Just target -> whisperHeader messageLength userRefId target
-          Nothing -> talkHeader messageLength userRefId
-          
-        payloadLength = fromIntegral messageLength + 3 -- terminator plus two bytes for the length
-        terminatedMessagePayload = LazyByteString.append encoded (LazyByteString.cons 0 LazyByteString.empty)
-        leader = Builder.toLazyByteString $ (intsToBuilder header) .++ (shortsToBuilder [payloadLength])
-      in LazyByteString.append leader terminatedMessagePayload
-    
+  let encoded = Obfuscate.obfuscate $ Domain.message communication
+      messageLength = fromIntegral $ LazyByteString.length encoded
+      userRefId = Domain.userRef $ Domain.speaker communication
+      header = case Domain.target communication of
+        Just target -> whisperHeader messageLength userRefId target
+        Nothing -> talkHeader messageLength userRefId
+
+      payloadLength = fromIntegral messageLength + 3 -- terminator plus two bytes for the length
+      terminatedMessagePayload = LazyByteString.append encoded (LazyByteString.cons 0 LazyByteString.empty)
+      leader = Builder.toLazyByteString $ (intsToBuilder header) .++ (shortsToBuilder [payloadLength])
+  in LazyByteString.append leader terminatedMessagePayload
+
 talkHeader :: Int -> Int-> [Int]
 talkHeader messageLength userRefId  =
   let totalLength = messageLength + 3
@@ -91,7 +89,7 @@ whisperHeader messageLength userRefId target =
   in messageType : totalLength : userRefId : targetRefId : []
 
 ensureLength :: Int -> a -> [a] -> [a]
-ensureLength limit padElement xs 
+ensureLength limit padElement xs
   | limit == (length xs)  = xs
   | limit < (length xs)   = take limit xs
   | otherwise             = pad limit padElement xs

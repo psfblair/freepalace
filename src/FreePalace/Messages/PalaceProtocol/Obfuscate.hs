@@ -1,14 +1,14 @@
 {-# LANGUAGE ViewPatterns, PatternSynonyms #-}
 module FreePalace.Messages.PalaceProtocol.Obfuscate where
 
+import           Data.Bits
 import qualified Data.ByteString.Lazy as LazyByteString
 import qualified Data.Convertible.Base as Convert
-import Data.Convertible.Instances.Num
-import Data.Encoding
-import Data.Encoding.CP1252
-import Data.List as List
-import Data.Word
-import Data.Bits
+import           Data.Convertible.Instances.Num  -- emacs marks this as unneeded but it is
+import           Data.Encoding
+import           Data.Encoding.CP1252
+import           Data.List as List
+import           Data.Word
 
 infixr  5 :<
 pattern b :< bs <- (LazyByteString.uncons -> Just (b, bs))
@@ -29,7 +29,8 @@ obfuscateRecursive (key1:key2:remainingKeys) previousPartiallyObfuscatedByte obf
       partiallyObfuscatedByte = obfuscatedByte `xor` key2
       newResults = LazyByteString.cons obfuscatedByte obfuscatedSoFar
   in obfuscateRecursive remainingKeys partiallyObfuscatedByte newResults remainingBytes
-
+obfuscateRecursive _ _ accumulated _ = accumulated -- We should never run out of keys because of the message size limit; this is just to satisfy the type checker.
+  
 illuminate :: [Word8] -> String
 illuminate obfuscated =
   let reversed = reverse obfuscated
