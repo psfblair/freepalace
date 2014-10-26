@@ -1,29 +1,16 @@
 module FreePalace.Net.Receive where
 
-import qualified System.Log.Logger as Log
 import qualified Network.Socket.ByteString.Lazy as NetworkLazyByteString 
 import qualified Data.ByteString.Lazy as LazyByteString
 import qualified Data.Binary.Get as Get
 import qualified Data.Convertible.Base as Convert
-import Data.Convertible.Instances.Num
 import Data.Word
 
 import Control.Applicative
 
-import qualified FreePalace.Net.Types as Net
+import qualified FreePalace.Net as Net
 import qualified FreePalace.Messages as Messages
 
-readHeader :: IO Int -> IO Messages.Header
-readHeader readNextInt = 
-  do
-    msgType <- Messages.idToMessageType <$> readNextInt
-    size <- readNextInt
-    referenceNumber <- readNextInt
-    return Messages.Header {
-      Messages.messageType = msgType,
-      Messages.messageSize = size,
-      Messages.messageRefNumber = referenceNumber
-    }
 
 readNullTerminatedTextFromNetwork :: Net.IncomingByteSource -> Int -> IO String
 readNullTerminatedTextFromNetwork byteSource numberOfCharacters =

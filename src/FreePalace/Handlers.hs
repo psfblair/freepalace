@@ -1,23 +1,19 @@
 module FreePalace.Handlers where
 
-import System.IO
-import qualified System.Log.Logger as Log
-import qualified Data.Map as Map
-import Control.Applicative
-import Control.Concurrent
-import Control.Exception
+import           Control.Concurrent
+import           Control.Exception
+import qualified Data.Map                           as Map
+import qualified System.Log.Logger                  as Log
 
-import qualified FreePalace.State as State
-import qualified FreePalace.Messages as Messages
-import qualified FreePalace.Messages.PalaceProtocol.Outbound as PalaceOutbound
-import qualified FreePalace.Messages.PalaceProtocol.Inbound as Inbound
-import qualified FreePalace.Net.Receive as Recv
-import qualified FreePalace.Net.Send as Send
-import qualified FreePalace.GUI.Types as GUI
-import qualified FreePalace.Net as Netcom
-import qualified FreePalace.Net.Types as Net
+import qualified FreePalace.GUI.Types               as GUI
 import qualified FreePalace.Handlers.PalaceProtocol as PalaceHandlers
-import qualified FreePalace.Media.Loader as MediaLoader
+import qualified FreePalace.Media.Loader            as MediaLoader
+import qualified FreePalace.Messages                as Messages
+import qualified FreePalace.Net                     as Net
+import qualified FreePalace.State                   as State
+import qualified FreePalace.Domain as Domain
+import qualified FreePalace.Handlers.State as StateHandlers
+import qualified FreePalace.Handlers.Types as HandlerTypes
 
 data GUIEventHandlers = GUIEventHandlers {
   handleUserTextEntry :: IO ()
@@ -29,9 +25,9 @@ guiEventHandlers clientState = GUIEventHandlers {
 }
 
 bindHandlers :: State.Connected -> GUIEventHandlers -> IO ()
-bindHandlers State.Connected { State.guiState = guiComponents }  guiEventHandlers =
+bindHandlers State.Connected { State.guiState = guiComponents } guiHandlers =
   do
-    bindUserTextEntry guiComponents $ handleUserTextEntry guiEventHandlers
+    bindUserTextEntry guiComponents $ handleUserTextEntry guiHandlers
     return ()
 
 bindUserTextEntry :: GUI.Components -> IO () -> IO ()
@@ -43,56 +39,57 @@ bindUserTextEntry guiComponents userTextEntryHandler =
     GUI.onButtonClick chatSendButton userTextEntryHandler
 
 -- TODO Once client is connected and disconnects, how does this function get the updated state for the next connection?
-handleConnectRequested :: State.ClientState -> State.Protocol -> Net.Hostname -> Net.PortId -> IO ()
+handleConnectRequested :: State.ClientState -> Net.Protocol -> Net.Hostname -> Net.PortId -> IO ()
 handleConnectRequested clientState protocol host port =
   do
-    let connectAttempt =
-          do
-            disconnectedState <- Netcom.disconnect clientState
-            connectedState    <- Netcom.connect disconnectedState protocol host port 
-            readyState        <- handleHandshake connectedState
-            -- TODO Must bind disconnect and reconnect to something that will stop the forked process
-            -- i.e., Control.Concurrent.killThread :: ThreadId -> IO ()
-            -- TODO If this thread dies or an exception is thrown on it, need to handle the disconnect
-            messageListenerThreadId <- forkIO $ dispatchIncomingMessages readyState
-            bindHandlers readyState $ guiEventHandlers readyState
-            sendLogin readyState
-            GUI.closeDialog . GUI.connectDialog . State.guiState $ readyState
-    catch connectAttempt (\(SomeException exception) ->
-                           do 
-                             Log.errorM "Connection" $ show exception
-                             -- TODO Provide some way in the GUI to indicate connection failed.
-                             -- TODO State monad - grab the actual current state, not where it started out
-                             disconnectedState <- Netcom.disconnect clientState
-                             GUI.closeDialog . GUI.connectDialog . State.disconnectedGui $ disconnectedState
-                             return ())
+    newState <- case protocol of
+      Net.PalaceProtocol -> PalaceHandlers.handleConnectRequested clientState host port
+    case newState of
+     State.DisconnectedState disconnected ->
+       do
+         GUI.closeDialog . GUI.connectDialog . State.disconnectedGui $ disconnected  -- TODO Show connection error somehow or something in GUI indicating failure
+         return ()
+     State.ConnectedState connected ->
+       do
+         readyState <- handleHandshake connected
+         -- TODO Must bind disconnect and reconnect to something that will stop the forked process
+         -- i.e., Control.Concurrent.killThread :: ThreadId -> IO ()
+         -- TODO If this thread dies or an exception is thrown on it, need to handle the disconnect
+         messageListenerThreadId <- forkIO $ dispatchIncomingMessages readyState
+         bindHandlers readyState $ guiEventHandlers readyState
+         sendLogin readyState
+         GUI.closeDialog . GUI.connectDialog . State.guiState $ readyState
+         return ()
 
 handleHandshake :: State.Connected -> IO State.Connected
-handleHandshake clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) =
-  PalaceHandlers.handleHandshake clientState connection messageConverters
+handleHandshake clientState =
+  case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleHandshake clientState connection messageConverters
 
 sendLogin :: State.Connected -> IO ()
-sendLogin clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) =
+sendLogin clientState =
   do
     let userId = State.userId $ State.userState clientState
-    PalaceHandlers.sendLogin connection messageConverters userId
+    case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.sendLogin connection messageConverters userId
 
 -- TODO The handler has to see if 1) it's connected, 2) it's a client command, 3) it's a script call, 4) a user is selected (for whisper)
 speak :: State.Connected -> IO ()
-speak clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) =
+speak clientState =
   do
     let userId            = State.userId $ State.userState clientState
         selectedUser      = Nothing -- TODO - get selected user from ... ?
         textEntryField    = GUI.chatEntry $ State.guiState clientState
     messageText <- GUI.textValue textEntryField
-    PalaceHandlers.speak connection messageConverters userId messageText selectedUser
+    case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.speak connection messageConverters userId messageText selectedUser
     GUI.clearTextEntry textEntryField
 
 -- TODO Handle connection loss
 dispatchIncomingMessages :: State.Connected -> IO ()
 dispatchIncomingMessages clientState =
   do
-    Log.debugM "Incoming.Message.Await" $ "Awaiting messages with state: " ++ (show clientState)    
+    Log.debugM "Incoming.Message.Await" $ "Awaiting messages with state: " ++ (show clientState)
     header <- readHeader clientState
     Log.debugM "Incoming.Message.Header" (show header)
     newState <- case Messages.messageType header of
@@ -108,20 +105,20 @@ dispatchIncomingMessages clientState =
       Messages.RoomDescend -> return clientState -- this message just means we're done receiving the room description & user list
       Messages.UserNew -> handleNewUserNotification clientState header
       -- End logon sequence
-      
-      Messages.Talk -> handleTalk clientState header Messages.TalkAloud
-      Messages.CrossRoomWhisper -> handleTalk clientState header Messages.Whispering
-      Messages.Say -> handleEncodedTalk clientState header Messages.TalkAloud
-      Messages.Whisper -> handleEncodedTalk clientState header Messages.Whispering
+
+      Messages.Talk -> handleTalk clientState header Domain.TalkAloud
+      Messages.CrossRoomWhisper -> handleTalk clientState header Domain.Whispering
+      Messages.Say -> handleEncodedTalk clientState header Domain.TalkAloud
+      Messages.Whisper -> handleEncodedTalk clientState header Domain.Whispering
       Messages.Move -> handleMovement clientState header
       _ -> handleUnknownMessage clientState header
     Log.debugM "Incoming.Message.Processed" $ "Message processed. New state: " ++ (show newState)
     dispatchIncomingMessages newState
 
 readHeader :: State.Connected -> IO Messages.Header
-readHeader State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters } =
-  PalaceHandlers.readHeader connection messageConverters        
-
+readHeader clientState =
+  case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.readHeader connection messageConverters
 
 {- OpenPalace comments say:
   This is only sent when the server is running in "guests-are-members" mode.
@@ -130,9 +127,12 @@ readHeader State.Connected { State.protocolState = State.PalaceProtocolState con
   us to reconnect "for security reasons."
 -}
 handleAlternateLogonReply :: State.Connected -> IO State.Connected  -- TODO return puidCrc and puidCounter when we need it
-handleAlternateLogonReply clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) =
-  PalaceHandlers.handleAlternateLogonReply clientState connection messageConverters        
-
+handleAlternateLogonReply clientState =
+  do
+    case State.protocolState clientState of
+     State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleAlternateLogonReply connection messageConverters
+    return clientState
+    
 handleServerVersion :: State.Connected -> Messages.Header -> IO State.Connected
 handleServerVersion clientState header =
   do
@@ -140,84 +140,160 @@ handleServerVersion clientState header =
     return clientState -- TODO Add server version to host state
 
 handleServerInfo :: State.Connected -> Messages.Header -> IO State.Connected
-handleServerInfo clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
-  PalaceHandlers.handleServerInfo clientState connection messageConverters header 
-  
+handleServerInfo clientState header =
+  do
+    (serverName, serverPermissions) <- case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleServerInfo connection messageConverters header
+    Log.debugM "Incoming.Message.ServerInfo" $ "Server name: " ++ serverName
+    return clientState
+
 handleUserStatus :: State.Connected -> Messages.Header -> IO State.Connected
-handleUserStatus clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
-  PalaceHandlers.handleUserStatus clientState connection messageConverters header 
+handleUserStatus clientState header =
+  do
+    userFlags <- case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleUserStatus connection messageConverters header
+    Log.debugM "Incoming.Message.UserStatus" $ "User status -- User flags: " ++ (show userFlags)
+    return clientState
 
 handleUserLogonNotification :: State.Connected -> Messages.Header -> IO State.Connected
-handleUserLogonNotification clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
+handleUserLogonNotification clientState header =
   do
     let gui = State.guiState clientState
-    (message, state) <- PalaceHandlers.handleUserLogonNotification clientState connection messageConverters refIdToUserIdMapping header
-    GUI.appendMessage (GUI.logWindow gui) $ Messages.makeRoomAnnouncement message
-    return state
-    
+    (userRefId, palaceUserCount) <- case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleUserLogonNotification connection messageConverters header
+    -- TODO Update state
+    let message = "User " ++ (Domain.userName $ userIdFrom header refIdToUserIdMapping) ++ " just arrived."
+    GUI.appendMessage (GUI.logWindow gui) $ makeRoomAnnouncement message
+    Log.debugM  "Incoming.Message.UserLoggedOnAndMax" $  message ++ "  Population: " ++ (show palaceUserCount)
+    return clientState
+
 handleMediaServerInfo :: State.Connected -> Messages.Header -> IO State.Connected
-handleMediaServerInfo clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
+handleMediaServerInfo clientState header =
   do
-    (serverInfo, state) <- PalaceHandlers.handleMediaServerInfo clientState connection header
-    let newState = State.withMediaServerInfo state serverInfo
-    loadRoomBackgroundImage newState
+    serverInfo <- case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleMediaServerInfo connection header
+    Log.debugM "Incoming.Message.HttpServerLocation" $ "Media server: " ++ serverInfo
+    let newState = StateHandlers.withMediaServerInfo clientState serverInfo
+    _  <- loadRoomBackgroundImage newState
     Log.debugM "Incoming.Message.HttpServerLocation.Processed" $ "New state: " ++ (show newState)
     return newState
 
  -- room name, background image, overlay images, props, hotspots, draw commands
 handleRoomDescription :: State.Connected -> Messages.Header -> IO State.Connected
-handleRoomDescription clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
+handleRoomDescription clientState header =
   do
-    (roomDescription, state) <- PalaceHandlers.handleRoomDescription clientState connection messageConverters header
-    let newState = State.withRoomDescription state roomDescription
-    loadRoomBackgroundImage newState
+    roomDescription <- case State.protocolState clientState of
+                        State.PalaceProtocolState connection messageConverters ->
+                          PalaceHandlers.handleRoomDescription connection messageConverters header
+    Log.debugM "Incoming.Message.GotRoomDescription" $ show roomDescription
+    let newState = StateHandlers.withRoomDescription clientState roomDescription
+    _ <- loadRoomBackgroundImage newState
     Log.debugM "Incoming.Message.GotRoomDescription.Processed" $ "New state: " ++ (show newState)
     return newState
-    
+
 handleUserList :: State.Connected -> Messages.Header -> IO State.Connected
-handleUserList clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
-  PalaceHandlers.handleUserList clientState connection header
+handleUserList clientState header =
+  do
+    case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleUserList connection header
+    Log.debugM "Incoming.Message.GotUserList" $ "Received user list."
+    return clientState
 
 handleNewUserNotification :: State.Connected -> Messages.Header -> IO State.Connected
-handleNewUserNotification clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
-  PalaceHandlers.handleNewUserNotification clientState connection header
+handleNewUserNotification clientState header =
+  do
+    case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleNewUserNotification connection header
+    Log.debugM "Incoming.Message.UserNew" $ "Received new user notification."
+    return clientState
 
-handleTalk :: State.Connected -> Messages.Header -> Messages.ChatMode -> IO State.Connected
-handleTalk clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header mode =
+handleTalk :: State.Connected -> Messages.Header -> Domain.ChatMode -> IO State.Connected
+handleTalk clientState header mode =
   do
     let gui = State.guiState clientState
-    (chat, state) <- PalaceHandlers.handleTalk clientState connection refIdToUserIdMapping header mode  -- TODO get mapping out of global state
-    GUI.appendMessage (GUI.logWindow gui) chat
+    chatData <- case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleTalk connection header
+    let communication = communicationFromChatData chatData mode
+    Log.debugM "Incoming.Message.UnencryptedTalk" (show communication)
+    GUI.appendMessage (GUI.logWindow gui) communication
     -- TODO send talk and user (and message type) to chat balloon in GUI
     -- TODO send talk to script event handler when there is scripting
-    return state
-    
-handleEncodedTalk :: State.Connected -> Messages.Header -> Messages.ChatMode -> IO State.Connected
-handleEncodedTalk clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header mode =
+    -- TODO new state with chat log and fix below
+    let newState = clientState
+    return newState
+
+handleEncodedTalk :: State.Connected -> Messages.Header -> Domain.ChatMode -> IO State.Connected
+handleEncodedTalk clientState header mode =
   do
     let gui = State.guiState clientState
-    -- TODO get user mapping out of global state
-    (chat, state) <- PalaceHandlers.handleEncodedTalk clientState connection messageConverters refIdToUserIdMapping header mode
-    GUI.appendMessage (GUI.logWindow gui) chat
+    chatData <- case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleEncodedTalk connection messageConverters header
+    let communication = communicationFromChatData chatData mode      
+    Log.debugM "Incoming.Message.EncryptedTalk" (show communication)
+    GUI.appendMessage (GUI.logWindow gui) communication
     -- TODO send talk and user (and message type) to chat balloon in GUI
     -- TODO send talk to script event handler when there is scripting
-    return state
-    
+    -- TODO new state with chat log and fix below
+    let newState = clientState
+    return newState
+
 handleMovement :: State.Connected -> Messages.Header -> IO State.Connected
-handleMovement clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
-  PalaceHandlers.handleMovement clientState connection messageConverters refIdToUserIdMapping header
+handleMovement clientState header =
+  do
+    movementData <- case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleMovement connection messageConverters header
+    Log.debugM "Incoming.Message.Movement" (show movementData)
+    let (movement, newState) = StateHandlers.withMovementData clientState movementData
+    -- TODO tell the GUI to move the user (in Handler.hs)
+    -- TODO send action to script event handler when there is scripting?
+    return newState
 
 handleUnknownMessage :: State.Connected -> Messages.Header -> IO State.Connected
-handleUnknownMessage  clientState@(State.Connected { State.protocolState = State.PalaceProtocolState connection messageConverters }) header =
-  PalaceHandlers.handleUnknownMessage clientState connection header
+handleUnknownMessage clientState header =
+  do
+    case State.protocolState clientState of
+      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.handleUnknownMessage connection header
+    return clientState
 
 
+
+userIdFrom :: Messages.Header -> Map.Map Domain.UserRefId Domain.UserId -> Domain.UserId
+userIdFrom header userMap =
+  let refNumber = Messages.messageRefNumber header
+  in userIdFor userMap refNumber 
+
+userIdFor :: Map.Map Domain.UserRefId Domain.UserId -> Domain.UserRefId -> Domain.UserId
+userIdFor userMap refId = 
+  let defaultUserId = Domain.UserId { Domain.userRef = refId, Domain.userName = "User #" ++ show refId }
+  in Map.findWithDefault defaultUserId refId userMap
 
 -- TODO This needs to live in the global state
-refIdToUserIdMapping :: Map.Map Int Messages.UserId
-refIdToUserIdMapping = Map.fromList [ (0, Messages.roomAnnouncementUserId) ]
+refIdToUserIdMapping :: Map.Map Domain.UserRefId Domain.UserId
+refIdToUserIdMapping = Map.fromList [ (0, roomAnnouncementUserId) ]
 
--- TODO Special types for media server URI? And Background image (we want various permutations of BG image for various media types)
+-- TODO Move to State? Or into ref map?
+roomAnnouncementUserId = Domain.UserId { Domain.userRef = 0, Domain.userName = "Announcement" }
+
+communicationFromChatData :: HandlerTypes.ChatData -> Domain.ChatMode -> Domain.Communication
+communicationFromChatData chatData chatMode =
+  Domain.Communication {
+    Domain.speaker = userIdFor refIdToUserIdMapping $ HandlerTypes.chatSource chatData,
+    Domain.target = fmap (userIdFor refIdToUserIdMapping) (HandlerTypes.chatRecipient chatData),
+    Domain.message = HandlerTypes.chatMessage chatData,
+    Domain.chatMode = chatMode
+  }
+  
+makeRoomAnnouncement :: String -> Domain.Communication
+makeRoomAnnouncement message =
+  Domain.Communication {
+    Domain.speaker = roomAnnouncementUserId
+  , Domain.target = Nothing
+  , Domain.message = message
+  , Domain.chatMode = Domain.Announcement
+  }
+
+
+
 -- TODO Do we want to reload this every time a new room description gets sent? How often does that happen?
 loadRoomBackgroundImage :: State.Connected -> IO State.Connected
 loadRoomBackgroundImage state =
@@ -233,10 +309,10 @@ loadRoomBackgroundImage state =
          let imageName = State.roomBackgroundImageName currentRoomState
              host = State.hostname $ State.hostState state
              port = State.portId $ State.hostState state
-         Log.debugM "Load.BackgroundImage" $ "Fetching background image " ++ imageName ++ " from " ++ mediaServerUrl
+         Log.debugM "Load.BackgroundImage" $ "Fetching background image " ++ imageName ++ " from " ++ (show mediaServerUrl)
          possibleImagePath <- MediaLoader.fetchCachedBackgroundImagePath host port mediaServerUrl imageName
          case possibleImagePath of
            Just imagePath -> GUI.displayBackground roomCanvas imagePath
            Nothing -> return ()
          return state
-     (_, _) -> return state 
+     (_, _) -> return state

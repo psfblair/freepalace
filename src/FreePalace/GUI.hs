@@ -2,7 +2,7 @@ module FreePalace.GUI where
 
 import qualified FreePalace.State as State
 import qualified FreePalace.Handlers as Handlers
-import qualified FreePalace.Net.Types as Net
+import qualified FreePalace.Net as Net
 import FreePalace.GUI.Types
 
 initializeGUI :: Components -> (Net.Hostname -> Net.PortId -> IO ()) -> IO ()

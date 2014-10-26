@@ -1,20 +1,14 @@
 module FreePalace.GUI.Gtk where
 
 import Graphics.UI.Gtk
-import Graphics.UI.Gtk.Builder
 import qualified Graphics.UI.Gtk.Display.Image as Image
 import qualified Graphics.UI.Gtk.Abstract.Widget as Widget
 import qualified Graphics.UI.Gtk.Gdk.Pixbuf as Pixbuf
 import qualified Graphics.UI.Gtk.Gdk.Events as Events
--- import qualified Graphics.Rendering.Pango.Structs as PangoStructs (Rectangle)
-import Foreign.Marshal.Array (newArray)
 import Control.Concurrent
-import System.IO
 
 import qualified FreePalace.GUI.Types as GUI
-import qualified FreePalace.Handlers as Handlers
-import qualified FreePalace.Messages as Messages
-import qualified FreePalace.Media.Loader as MediaLoader
+import qualified FreePalace.Domain as Domain
 
 data GtkGui = GtkGui {
     mainWindow :: Window
@@ -38,8 +32,8 @@ data GtkGui = GtkGui {
 init :: FilePath -> IO (GUI.Components)
 init gladepath =
   do
-    initGUI
-    timeoutAddFull (yield >> return True) priorityDefaultIdle 100
+    _ <- initGUI
+    _ <- timeoutAddFull (yield >> return True) priorityDefaultIdle 100
     gui <- loadGladeComponents gladepath
     return $ wrapComponents gui
 
@@ -52,32 +46,32 @@ loadGladeComponents gladepath =
     builder <- builderNew
     builderAddFromFile builder gladepath
 
-    mainWindow <- builderGetObject builder castToWindow "mainWindow"
-    windowMove mainWindow 322 50
-    connectDialog <- builderGetObject builder castToDialog "connectDialog"
-    connectHostEntry <- builderGetObject builder castToEntry "hostEntry"
-    widgetGrabFocus connectHostEntry
-    connectPortEntry <- builderGetObject builder castToEntry "portEntry"
-    connectOkButton <- builderGetObject builder castToButton "connectOk"
-    connectCancelButton <- builderGetObject builder castToButton "connectCancel"
+    guiMainWindow <- builderGetObject builder castToWindow "mainWindow"
+    windowMove guiMainWindow 322 50
+    guiConnectDialog <- builderGetObject builder castToDialog "connectDialog"
+    guiConnectHostEntry <- builderGetObject builder castToEntry "hostEntry"
+    widgetGrabFocus guiConnectHostEntry
+    guiConnectPortEntry <- builderGetObject builder castToEntry "portEntry"
+    guiConnectOkButton <- builderGetObject builder castToButton "connectOk"
+    guiConnectCancelButton <- builderGetObject builder castToButton "connectCancel"
 
-    logWindow <- builderGetObject builder castToWindow "logWindow"
-    windowMove logWindow 322 671
-    logTextView <- builderGetObject builder castToTextView "logTextView"
-    widgetModifyBg logTextView StateNormal (Color 0xFFFF 0xFFFF 0xFFFF)
-    logTextBuffer <- builderGetObject builder castToTextBuffer "logTextBuffer"
+    guiLogWindow <- builderGetObject builder castToWindow "logWindow"
+    windowMove guiLogWindow 322 671
+    guiLogTextView <- builderGetObject builder castToTextView "logTextView"
+    widgetModifyBg guiLogTextView StateNormal (Color 0xFFFF 0xFFFF 0xFFFF)
+    guiLogTextBuffer <- builderGetObject builder castToTextBuffer "logTextBuffer"
 
-    chatEntry <- builderGetObject builder castToEntry "chatEntry"
-    widgetGrabFocus chatEntry 
-    chatButton <- builderGetObject builder castToButton "chatButton"
+    guiChatEntry <- builderGetObject builder castToEntry "chatEntry"
+    widgetGrabFocus guiChatEntry 
+    guiChatButton <- builderGetObject builder castToButton "chatButton"
 
-    roomImage <- builderGetObject builder castToImage "roomImage"
+    guiRoomImage <- builderGetObject builder castToImage "roomImage"
     
-    return $ GtkGui mainWindow
-      connectDialog connectHostEntry connectPortEntry connectOkButton connectCancelButton
-      logWindow logTextView logTextBuffer
-      chatEntry chatButton
-      roomImage
+    return $ GtkGui guiMainWindow
+      guiConnectDialog guiConnectHostEntry guiConnectPortEntry guiConnectOkButton guiConnectCancelButton
+      guiLogWindow guiLogTextView guiLogTextBuffer
+      guiChatEntry guiChatButton
+      guiRoomImage
 
 wrapComponents :: GtkGui -> GUI.Components
 wrapComponents gui =
@@ -107,7 +101,7 @@ wrapMainWindow gui =
      GUI.closeMainWindow = widgetHide mainWin,
      GUI.onMainWindowClose =
        \handler -> do
-         onDestroy mainWin handler
+         _ <- onDestroy mainWin handler
          return ()
    }
 
@@ -126,7 +120,7 @@ wrapEntry entry =
     GUI.clearTextEntry = entrySetText entry "",
     GUI.onEnterKeyPress =
       \handler -> do
-        onEntryActivate entry handler
+        _ <- onEntryActivate entry handler
         return ()
   }
 
@@ -135,7 +129,7 @@ wrapButton button =
   GUI.Button {
     GUI.onButtonClick =
        \handler -> do
-         onClicked button handler
+         _ <- onClicked button handler
          return ()
   }
 
@@ -152,21 +146,21 @@ wrapLogWindow gui =
                            -- TODO Handle different message types: whisper, room message, thought balloon, etc. using styled text
                            -- TODO - ultimately want this in 2-column format, with message wrapping only in right-hand column
                            -- TODO - want timestamp when we actually save the log, but not for display
-                           let user = Messages.userName $ Messages.speaker chat
-                               message = Messages.message chat
+                           let user = Domain.userName $ Domain.speaker chat
+                               message = Domain.message chat
                                stringToLog = user ++ ":\t" ++ message ++ "\n"
                            iter <- textBufferGetEndIter textBuffer
                            textBufferInsert textBuffer iter stringToLog
-                           textViewScrollToIter textView iter 0.0 Nothing  
+                           _ <- textViewScrollToIter textView iter 0.0 Nothing  
                            return () -- TODO store in message log for saving later
   }
 
 -- TODO: Keep pixbuf around, redraw to scale when window is resized
 wrapDrawingArea :: Image -> GUI.Canvas
-wrapDrawingArea roomImage = GUI.Canvas {
+wrapDrawingArea roomBgImage = GUI.Canvas {
   GUI.displayBackground = \imagePath ->
                            do
-                             (Events.Rectangle _  _ width height) <- Widget.widgetGetAllocation roomImage 
+                             (Events.Rectangle _  _ width height) <- Widget.widgetGetAllocation roomBgImage 
                              pixbuf <- Pixbuf.pixbufNewFromFileAtScale imagePath width height True
-                             Image.imageSetFromPixbuf roomImage pixbuf
+                             Image.imageSetFromPixbuf roomBgImage pixbuf
   }

@@ -4,10 +4,7 @@ module FreePalace.GUI.Types where
 -- TODO Need Disconnect menu item and Quit menu item
 
 import qualified System.FilePath as Path
-
-import qualified FreePalace.Messages as Messages
-import qualified FreePalace.Media.Types as Media
-import qualified FreePalace.Net.Types as Net
+import qualified FreePalace.Domain as Domain
 
 data MainWindow = MainWindow {
   quit :: IO (),
@@ -19,7 +16,7 @@ data MainWindow = MainWindow {
 data LogWindow = LogWindow {
   showLogWindow :: IO (),
   closeLogWindow :: IO (),
-  appendMessage :: Messages.Communication -> IO ()
+  appendMessage :: Domain.Communication -> IO ()
 }
 
 data Dialog = Dialog {

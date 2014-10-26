@@ -1,38 +1,49 @@
 module FreePalace.Messages.PalaceProtocol.Inbound where
 
-import Control.Applicative
-import qualified Data.Binary.Get as Get
-import qualified Data.Convertible.Base as Convert
-import Data.Convertible.Instances.Num
-import qualified Data.Map as Map
-import Data.Word
+import           Control.Applicative
+import qualified Data.Binary.Get                              as Get
+import qualified Data.Convertible.Base                        as Convert
+import           Data.Convertible.Instances.Num
+import qualified Data.Map                                     as Map
+import           Data.Word
 
-import qualified FreePalace.Messages as Messages
+import qualified FreePalace.Handlers.Types                    as Handlers
+import qualified FreePalace.Messages                          as Messages
 import qualified FreePalace.Messages.PalaceProtocol.Obfuscate as Illuminator
-import qualified FreePalace.Net.Receive as Receive
-import qualified FreePalace.Net.Types as Net
+import qualified FreePalace.Net                               as Net
+import qualified FreePalace.Net.Receive                       as Receive
 
 readHeader :: Net.IncomingByteSource -> Get.Get Word32 -> IO Messages.Header
-readHeader byteSource intReader = Receive.readHeader $ Receive.readIntFromNetwork intReader byteSource
+readHeader byteSource intReader =
+  do
+    let readNextInt = Receive.readIntFromNetwork intReader byteSource
+    msgType <- Messages.idToMessageType <$> readNextInt
+    size <- readNextInt
+    referenceNumber <- readNextInt
+    return Messages.Header {
+      Messages.messageType = msgType,
+      Messages.messageSize = size,
+      Messages.messageRefNumber = referenceNumber
+    }
 
-readAlternateLogonReply :: Net.IncomingByteSource -> Get.Get Word32 -> Get.Get Word16 -> IO (Int, Int)
+readAlternateLogonReply :: Net.IncomingByteSource -> Get.Get Word32 -> Get.Get Word16 -> IO (Handlers.PuidCounter, Handlers.PuidCrc)
 readAlternateLogonReply byteSource intReader shortReader  =
   do
     let readInt = Receive.readIntFromNetwork intReader byteSource
         readByte = Receive.readByteFromNetwork byteSource
         readText = Receive.readNullTerminatedTextFromNetwork byteSource
         readShort = Receive.readShortFromNetwork shortReader byteSource
-      
+
     crc <- readInt
     counter <- readInt
     userNameLength <- readByte
     userName <- readText 31
     wizardPassword <- readText 32
     auxFlags <- readInt
- 
+
     puidCounter <- readInt
     puidCrc <- readInt
- 
+
     demoElapsed <- readInt
     totalElapsed <- readInt
     demoLimit <- readInt
@@ -44,57 +55,50 @@ readAlternateLogonReply byteSource intReader shortReader  =
     upload2DEngineCapabilities <- readInt
     upload2DGraphicsCapabilities <- readInt
     upload3DEngineCapabilities <- readInt
-        
-    return (puidCounter, puidCrc)
-			 
-readServerInfo :: Net.IncomingByteSource -> Get.Get Word32 -> Messages.Header -> IO (String, Int)
+
+    return (puidCounter, puidCrc) -- TODO When do these get used?
+
+readServerInfo :: Net.IncomingByteSource -> Get.Get Word32 -> Messages.Header -> IO (Handlers.PlaceName, Handlers.ServerPermissions)
 readServerInfo byteSource intReader header =
   do
     let readInt = Receive.readIntFromNetwork intReader byteSource
         readByte = Receive.readByteFromNetwork byteSource
         readText = Receive.readTextFromNetwork byteSource
-
     permissions <- readInt
     size <- fromIntegral <$> readByte
     serverName <- readText size
-
+    return (serverName, permissions)
     {- OpenPalace notes:
 	Weird -- this message is supposed to include options and upload/download capabilities, but doesn't.
           options = socket.readUnsignedInt();
           uploadCapabilities = socket.readUnsignedInt();
           downloadCapabilities = socket.readUnsignedInt();
     -}
-    
-    return (serverName, permissions)
 
--- TODO Create a UserStatus type
-readUserStatus :: Net.IncomingByteSource -> Get.Get Word16 -> Messages.Header -> IO Word16
+readUserStatus :: Net.IncomingByteSource -> Get.Get Word16 -> Messages.Header -> IO Handlers.UserFlags
 readUserStatus byteSource shortReader header =
   do
     let readShort = Receive.readShortFromNetwork shortReader byteSource
-        readByte = Receive.readByteFromNetwork byteSource
         readBytes = Receive.readBytesFromNetwork byteSource
         trailingBytes = (Messages.messageSize header) - 2
-
     userFlags <- readShort
-    readBytes trailingBytes
-
+    _ <- readBytes trailingBytes
     return userFlags
 
-readUserLogonNotification :: Net.IncomingByteSource -> Get.Get Word32 -> Messages.Header -> IO (Int, Int)
+readUserLogonNotification :: Net.IncomingByteSource -> Get.Get Word32 -> Messages.Header -> IO (Handlers.UserRefId, Handlers.PalaceUserCount)
 readUserLogonNotification byteSource intReader header =
   do
     let readInt = Receive.readIntFromNetwork intReader byteSource
         userWhoLoggedOn = Messages.messageRefNumber header
     population <- readInt
     return (userWhoLoggedOn, population)
-    
-readMediaServerInfo :: Net.IncomingByteSource -> Messages.Header -> IO String
+
+readMediaServerInfo :: Net.IncomingByteSource -> Messages.Header -> IO Net.URL
 readMediaServerInfo byteSource header =
   Receive.readNullTerminatedTextFromNetwork byteSource $ Messages.messageSize header
 
 -- TODO Finish this
-readRoomDescription :: Net.IncomingByteSource -> Get.Get Word32 -> Get.Get Word16 -> Messages.Header -> IO Messages.RoomDescription
+readRoomDescription :: Net.IncomingByteSource -> Get.Get Word32 -> Get.Get Word16 -> Messages.Header -> IO Handlers.RoomDescription
 readRoomDescription byteSource intReader shortReader header =
   do
     let readShort = Receive.readShortFromNetwork shortReader byteSource
@@ -128,10 +132,10 @@ readRoomDescription byteSource intReader shortReader header =
         backgroundImageNameLength = fromIntegral $ head $ drop backgroundImageNameOffset roomData
         backgroundImageName = map Convert.convert $ take backgroundImageNameLength $ drop (backgroundImageNameOffset + 1) roomData
 
-    return Messages.RoomDescription {
-        Messages.roomId = roomId
-      , Messages.roomName = roomName
-      , Messages.roomBackgroundImageName = backgroundImageName
+    return Handlers.RoomDescription {
+        Handlers.roomDescId = roomId
+      , Handlers.roomDescName = roomName
+      , Handlers.roomDescBackground = backgroundImageName
     }
 {- Next, load:
      -- overlay images
@@ -142,7 +146,7 @@ readRoomDescription byteSource intReader shortReader header =
 For each overlay image:
 	refCon = imageBA.readInt(); --  unused
 	id = imageBA.readShort();
-	picNameOffset = imageBA.readShort(); 
+	picNameOffset = imageBA.readShort();
 	transparencyIndex = imageBA.readShort();
 	readShort(); -- Reserved: padding for field alignment
         picNameLength <- readByte
@@ -151,9 +155,9 @@ For each overlay image:
 
 For each hotspot:
         scriptEventMask <- readInt
-	flags <- readInt              -- unused? 
+	flags <- readInt              -- unused?
 	secureInfo <- readInt
-	refCon <- readInt             
+	refCon <- readInt
 	location.y <- readShort
 	location.x <- readShort
 	id <- readShort               -- unused?
@@ -170,7 +174,7 @@ For each hotspot:
 	var nameOffset:int <- readShort
 	var scriptTextOffset:int <- readShort
 	readShort                 -- unused?
-        nameLength  
+        nameLength
         name -- using nameOffset and nameLength
 
     Now look for script info using the scriptTextOffset:
@@ -223,7 +227,7 @@ For each draw command -- has a 10-byte header and then a length specified by com
 	red <- readUnsignedByte
 	green <- readUnsignedByte
 	blue <- readUnsignedByte
-	
+
 	alphaInt <- readUnsignedByte  -- fill color and alpha
 	red <- readUnsignedByte
 	green <- readUnsignedByte
@@ -234,63 +238,48 @@ For each draw command -- has a 10-byte header and then a length specified by com
 readUserList :: Net.IncomingByteSource -> Messages.Header -> IO ()
 readUserList byteSource header =
   do
-    Receive.readBytesFromNetwork byteSource $ Messages.messageSize header
+    _ <- Receive.readBytesFromNetwork byteSource $ Messages.messageSize header
     return ()
 
 -- TODO Finish this
 readNewUserNotification :: Net.IncomingByteSource -> Messages.Header -> IO ()
 readNewUserNotification byteSource header =
   do
-    Receive.readBytesFromNetwork byteSource $ Messages.messageSize header
+    _ <- Receive.readBytesFromNetwork byteSource $ Messages.messageSize header
     return ()
 
-readTalk :: Net.IncomingByteSource -> Map.Map Int Messages.UserId -> Messages.Header -> Messages.ChatMode -> IO Messages.Communication
-readTalk byteSource userMap header mode =
+readTalk :: Net.IncomingByteSource -> Messages.Header -> IO Handlers.ChatData
+readTalk byteSource header =
   do
-    let speaking = Messages.userIdFrom header userMap
-        chatMode = case mode of
-          Messages.TalkAloud -> if Messages.userRef speaking == 0 then Messages.Announcement else Messages.TalkAloud
-          otherMode -> otherMode
+    let speaking = Messages.messageRefNumber header
         readText = Receive.readNullTerminatedTextFromNetwork byteSource
         messageLength = Messages.messageSize header
 
     message <- truncateChatMessage <$> readText messageLength
-    
-    return Messages.Communication {
-      Messages.speaker = speaking,
-      Messages.target = Nothing,
-      Messages.message = message,
-      Messages.chatMode = chatMode
-    }
- 
-readEncodedTalk :: Net.IncomingByteSource -> Get.Get Word16 -> Map.Map Int Messages.UserId -> Messages.Header -> Messages.ChatMode -> IO Messages.Communication
-readEncodedTalk byteSource shortReader userMap header mode =
+
+    return Handlers.ChatData {
+        Handlers.chatSource = speaking
+      , Handlers.chatRecipient = Nothing
+      , Handlers.chatMessage = message
+      }
+
+readEncodedTalk :: Net.IncomingByteSource -> Get.Get Word16 -> Messages.Header -> IO Handlers.ChatData
+readEncodedTalk byteSource shortReader header =
   -- header messageSize field is actually the message checksum + 1 ??
   do
-    let readShort = Receive.readShortFromNetwork shortReader byteSource    
-        readBytes = Receive.readBytesFromNetwork byteSource
-        speaking = Messages.userIdFrom header userMap
-
-    length <- fromIntegral <$> readShort -- This is apparently the total length including these two bytes and the terminator
-    let messageLength = length - 2
-    obfuscated <- truncateChatMessage <$> init <$> readBytes messageLength
-    let message = Illuminator.illuminate obfuscated
-        
-    return Messages.Communication {
-      Messages.speaker = speaking,
-      Messages.target = Nothing,
-      Messages.message = message,
-      Messages.chatMode = mode
-    }
-
-readMovement :: Net.IncomingByteSource -> Get.Get Word16 -> Map.Map Int Messages.UserId -> Messages.Header -> IO Messages.Movement
-readMovement byteSource shortReader userMap header =
-  do
     let readShort = Receive.readShortFromNetwork shortReader byteSource
-        mover = Messages.userIdFrom header userMap
-    y <- fromIntegral <$> readShort
-    x <- fromIntegral <$> readShort
-    return Messages.Movement { Messages.x = x, Messages.y = y, Messages.userWhoMoved = mover }
+        readBytes = Receive.readBytesFromNetwork byteSource
+        speaking = Messages.messageRefNumber header
+
+    fieldLength <- fromIntegral <$> readShort -- This is apparently the total length including these two bytes and the terminator
+    obfuscated <- truncateChatMessage <$> init <$> readBytes (fieldLength - 2)
+    let message = Illuminator.illuminate obfuscated
+
+    return Handlers.ChatData {
+        Handlers.chatSource = speaking
+      , Handlers.chatRecipient = Nothing
+      , Handlers.chatMessage = message
+      }
 
 -- Chat string can't be > 254 characters long
 -- OpenPalace carries along original message but unclear why it's needed
@@ -298,8 +287,18 @@ readMovement byteSource shortReader userMap header =
 truncateChatMessage :: [a] -> [a]
 truncateChatMessage message = take 254 message
 
+
+readMovement :: Net.IncomingByteSource -> Get.Get Word16 -> Messages.Header -> IO Handlers.MovementData
+readMovement byteSource shortReader header =
+  do
+    let readShort = Receive.readShortFromNetwork shortReader byteSource
+        mover = Messages.messageRefNumber header
+    y <- fromIntegral <$> readShort
+    x <- fromIntegral <$> readShort
+    return Handlers.MovementData { Handlers.x = x, Handlers.y = y, Handlers.userWhoMoved = mover }
+
 readUnknown :: Net.IncomingByteSource -> Messages.Header -> IO ()
 readUnknown byteSource header =
   do
-    Receive.readBytesFromNetwork byteSource $ Messages.messageSize header
+    _ <- Receive.readBytesFromNetwork byteSource $ Messages.messageSize header
     return ()

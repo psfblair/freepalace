@@ -10,13 +10,13 @@ import Data.Encoding.CP1252
 import Data.Monoid
 import Control.Applicative
 
-import qualified FreePalace.Net.Types as Net 
+import qualified FreePalace.Net as Net 
 import FreePalace.Net.Utils
 
 writeBytesToSink :: Net.OutgoingByteSink -> LazyByteString.ByteString -> IO ()
 writeBytesToSink (Net.SocketByteSink socket) byteString =
   do
-    NetworkLazyByteString.send socket byteString
+    _ <- NetworkLazyByteString.send socket byteString
     return ()
 
 toIntByteStringBuilder :: (Int32 -> Builder.Builder) -> [Int] -> Builder.Builder

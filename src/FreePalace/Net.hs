@@ -1,76 +1,29 @@
 module FreePalace.Net where
 
-import qualified Network.Socket as Socket hiding (send, sendTo, recv, recvFrom) -- I wish this module didn't have to know about sockets.
-import qualified Data.ByteString.Lazy as LazyByteString
+import qualified Data.Binary.Get              as Get
 import qualified Data.ByteString.Lazy.Builder as Builder
-import qualified Data.Binary.Get as Get
-import Data.Word
-import Data.Int
-import Control.Exception
+import           Data.Int
+import           Data.Word
+import qualified Network.Socket               as Socket (Socket)
 
-import qualified FreePalace.Net.Types as Net
-import qualified FreePalace.Messages as Messages
-import qualified FreePalace.Net.Send as Send
-import qualified FreePalace.Net.Receive as Receive
-import qualified FreePalace.State as State
+type Hostname = String
+type PortId   = String
+type URL      = String
 
-connect :: State.Disconnected -> State.Protocol -> Net.Hostname -> Net.PortId -> IO State.Connected
-connect priorState State.PalaceProtocol hostname portId =
-  do
-    addrinfos <- Socket.getAddrInfo Nothing (Just hostname) (Just portId)
-    let serveraddr = head addrinfos
-    socket <- Socket.socket (Socket.addrFamily serveraddr) Socket.Stream Socket.defaultProtocol
-    Socket.setSocketOption socket Socket.KeepAlive 1
-    Socket.connect socket (Socket.addrAddress serveraddr)
-    let byteSource = Net.SocketByteSource socket
-        byteSink = Net.SocketByteSink socket
-    return $ justConnectedToPalaceState priorState byteSource byteSink hostname portId
+-- TODO - These may be better as typeclasses and get rid of dependence of this module on sockets
+data IncomingByteSource = SocketByteSource Socket.Socket
+data OutgoingByteSink   = SocketByteSink   Socket.Socket
 
-disconnect :: State.ClientState -> IO State.Disconnected
-disconnect (State.DisconnectedState state) = return state
-disconnect (State.ConnectedState State.Connected {
-    State.guiState = gui
-  , State.protocolState = State.PalaceProtocolState connection converters
-  , State.settings = settings
-  }) =
-  do
-    let (Net.SocketByteSource socket) = State.palaceByteSource connection
-        disconnectAttempt = Socket.close socket
-    catch disconnectAttempt (\(SomeException e) -> return ())  -- If we can't disconnect, we're going to be throwing away that connection state anyway.
-    return $ State.Disconnected gui State.HostDirectory settings
+data Protocol = PalaceProtocol
 
-justConnectedToPalaceState :: State.Disconnected -> Net.IncomingByteSource -> Net.OutgoingByteSink -> Net.Hostname -> Net.PortId -> State.Connected
-justConnectedToPalaceState priorState byteSource byteSink hostname portId =
-  let gui = State.disconnectedGui priorState
-      settings = State.disconnectedSettings priorState
-      connection  = State.PalaceConnection {
-          State.palaceByteSource = byteSource
-        , State.palaceByteSink = byteSink
-        }
-  in State.Connected {
-      State.protocolState = State.PalaceProtocolState connection defaultPalaceMessageConverters
-    , State.guiState = gui
-    , State.hostState = State.initialHostStateFor hostname portId
-    , State.hostDirectory = State.HostDirectory
-    , State.userState = State.NotLoggedIn { State.userName = State.thisUserName settings }
-    , State.settings = settings
-    }
-
-defaultPalaceMessageConverters :: State.PalaceMessageConverters
-defaultPalaceMessageConverters = bigEndianMessageConverters
-
-bigEndianMessageConverters :: State.PalaceMessageConverters
-bigEndianMessageConverters = State.PalaceMessageConverters {
-    State.palaceShortWriter = Builder.word16BE
-  , State.palaceIntWriter = Builder.int32BE
-  , State.palaceShortReader = Get.getWord16be
-  , State.palaceIntReader = Get.getWord32be
+data PalaceConnection = PalaceConnection {
+    palaceByteSource :: IncomingByteSource
+  , palaceByteSink   :: OutgoingByteSink
   }
 
-littleEndianMessageConverters :: State.PalaceMessageConverters
-littleEndianMessageConverters = State.PalaceMessageConverters {
-    State.palaceShortWriter = Builder.word16LE
-  , State.palaceIntWriter = Builder.int32LE
-  , State.palaceShortReader = Get.getWord16le
-  , State.palaceIntReader = Get.getWord32le
+data PalaceMessageConverters = PalaceMessageConverters {
+    palaceShortWriter :: Word16 -> Builder.Builder
+  , palaceIntWriter   :: Int32 -> Builder.Builder
+  , palaceShortReader :: Get.Get Word16
+  , palaceIntReader   :: Get.Get Word32
   }

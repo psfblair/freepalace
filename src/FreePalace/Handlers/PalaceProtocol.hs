@@ -1,129 +1,145 @@
 module FreePalace.Handlers.PalaceProtocol where
 
-import qualified System.Log.Logger as Log
-import qualified Data.Map as Map
-import Control.Exception
-
-import qualified FreePalace.State as State
-import qualified FreePalace.Messages as Messages
-import qualified FreePalace.Messages.PalaceProtocol.Inbound as PalaceInbound
+import           Control.Exception
+import Control.Applicative
+import qualified FreePalace.Messages                         as Messages
+import qualified FreePalace.Messages.PalaceProtocol.Inbound  as PalaceInbound
 import qualified FreePalace.Messages.PalaceProtocol.Outbound as PalaceOutbound
-import qualified FreePalace.Net as Netcom
-import qualified FreePalace.Net.Types as Net
-import qualified FreePalace.Net.Receive as Receive
-import qualified FreePalace.Net.Send as Send
-import qualified FreePalace.GUI.Types as GUI
+import qualified FreePalace.Net.PalaceProtocol.Connect       as Connect
+import qualified FreePalace.Net.Send                         as Send
+import qualified FreePalace.Net                              as Net
+import qualified FreePalace.State                            as State
+import qualified System.Log.Logger                           as Log
+import qualified FreePalace.Domain as Domain
+import qualified FreePalace.Handlers.State as Handlers
+import qualified FreePalace.Handlers.Types as HandlerTypes
 
-handleHandshake :: State.Connected -> State.PalaceConnection -> State.PalaceMessageConverters -> IO State.Connected
+handleConnectRequested :: State.ClientState -> Net.Hostname -> Net.PortId -> IO State.ClientState
+handleConnectRequested clientState host port =
+  do
+    disconnected <- disconnect clientState
+    catch
+      (State.ConnectedState <$> connect disconnected host port)
+      (\(SomeException exception) ->
+        do
+          Log.errorM "Connection" $ show exception
+          return $ State.DisconnectedState disconnected)
+
+disconnect :: State.ClientState -> IO State.Disconnected
+disconnect (State.DisconnectedState disconnected) = return disconnected
+disconnect (State.ConnectedState priorState@(State.Connected { State.protocolState = State.PalaceProtocolState connection _ })) =
+  do
+    Connect.disconnect connection -- This does not rethrow exceptions
+    return $ State.Disconnected gui Domain.HostDirectory settings
+    where gui = State.guiState priorState
+          settings = State.settings priorState
+
+connect :: State.Disconnected -> Net.Hostname -> Net.PortId -> IO State.Connected
+connect priorState host port = 
+  do
+    connection <- Connect.connect host port
+    return State.Connected {
+      State.protocolState = State.PalaceProtocolState connection Connect.defaultPalaceMessageConverters
+    , State.guiState = State.disconnectedGui priorState
+    , State.hostState = Handlers.initialHostStateFor host port
+    , State.hostDirectory = Domain.HostDirectory
+    , State.userState = State.NotLoggedIn { State.username = State.thisUserName . State.disconnectedSettings $ priorState }
+    , State.settings = State.disconnectedSettings priorState
+    }
+    
+handleHandshake :: State.Connected -> Net.PalaceConnection -> Net.PalaceMessageConverters -> IO State.Connected
 handleHandshake clientState connection messageConverters =
   do
-    let intReader  = State.palaceIntReader messageConverters
-        byteSource = State.palaceByteSource connection
-        readInt    = Receive.readIntFromNetwork intReader byteSource
-    header <- Receive.readHeader readInt -- TODO Time out if this takes too long
+    header <- readHeader connection messageConverters -- TODO Time out if this takes too long
     let msgType    = Messages.messageType header
         userRefId  = Messages.messageRefNumber header
         currentUserState = State.userState clientState
-        newState   = clientState { State.userState = State.LoggedIn { State.userId = State.userIdFor currentUserState userRefId }}
+        newState   = clientState { State.userState = State.LoggedIn { State.userId = Handlers.userIdFor currentUserState userRefId }}
     Log.debugM "Incoming.Handshake" (show msgType)
     case msgType of
       Messages.BigEndianServer    -> return  $ newState
-      Messages.LittleEndianServer -> return  $ newState { State.protocolState = State.PalaceProtocolState connection Netcom.littleEndianMessageConverters }
+      Messages.LittleEndianServer -> return  $ newState { State.protocolState = State.PalaceProtocolState connection Connect.littleEndianMessageConverters }
       Messages.UnknownServer      -> throwIO $ userError "Unknown server type"
       _                           -> throwIO $ userError "Invalid server type"
 
-sendLogin :: State.PalaceConnection -> State.PalaceMessageConverters -> Messages.UserId -> IO ()
-sendLogin State.PalaceConnection { State.palaceByteSink = byteSink } messageConverters userId =
+sendLogin :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Domain.UserId -> IO ()
+sendLogin Net.PalaceConnection { Net.palaceByteSink = byteSink } messageConverters userId =
   do
-    let intsToBuilder     = Send.toIntByteStringBuilder   $ State.palaceIntWriter   messageConverters
-        shortsToBuilder   = Send.toShortByteStringBuilder $ State.palaceShortWriter messageConverters
+    let intsToBuilder     = Send.toIntByteStringBuilder   $ Net.palaceIntWriter   messageConverters
+        shortsToBuilder   = Send.toShortByteStringBuilder $ Net.palaceShortWriter messageConverters
         loginMessageBytes = PalaceOutbound.loginMessage intsToBuilder shortsToBuilder userId
     Log.debugM "Outgoing.Login" "Sending login..."
-    Send.writeBytesToSink byteSink loginMessageBytes     
+    Send.writeBytesToSink byteSink loginMessageBytes
 
 -- TODO The handler has to see if 1) it's a client command, 2) it's a script call, 3) a user is selected (for whisper)
-speak :: State.PalaceConnection -> State.PalaceMessageConverters -> Messages.UserId -> String -> Maybe Messages.UserId -> IO ()
-speak State.PalaceConnection { State.palaceByteSink = byteSink } messageConverters userId messageText selectedUser =
+speak :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Domain.UserId -> String -> Maybe Domain.UserId -> IO ()
+speak Net.PalaceConnection { Net.palaceByteSink = byteSink } messageConverters userId messageText selectedUser =
   do
-    let intsToBuilder     = Send.toIntByteStringBuilder   $ State.palaceIntWriter   messageConverters
-        shortsToBuilder   = Send.toShortByteStringBuilder $ State.palaceShortWriter messageConverters
-    
+    let intsToBuilder     = Send.toIntByteStringBuilder   $ Net.palaceIntWriter   messageConverters
+        shortsToBuilder   = Send.toShortByteStringBuilder $ Net.palaceShortWriter messageConverters
+
         -- TODO check the initial character of the message for instructions
-        communication = Messages.Communication {
-          Messages.speaker = userId,
-          Messages.target = selectedUser,
-          Messages.message = messageText,
-          Messages.chatMode = Messages.Outbound
+        communication = Domain.Communication {
+          Domain.speaker = userId,
+          Domain.target = selectedUser,
+          Domain.message = messageText,
+          Domain.chatMode = Domain.Outbound
           }
-                        
+
         chatMessageBytes = PalaceOutbound.chatMessage intsToBuilder shortsToBuilder communication
     Log.debugM "Outgoing.Talk" (show communication)
     Send.writeBytesToSink byteSink chatMessageBytes
 
-readHeader :: State.PalaceConnection -> State.PalaceMessageConverters -> IO Messages.Header
+readHeader :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Messages.Header
 readHeader connection messageConverters =
   do
-    let byteSource = State.palaceByteSource connection
-        intReader = State.palaceIntReader messageConverters
+    let byteSource = Net.palaceByteSource connection
+        intReader = Net.palaceIntReader messageConverters
     PalaceInbound.readHeader byteSource intReader
 
-handleAlternateLogonReply :: State.Connected -> State.PalaceConnection -> State.PalaceMessageConverters -> IO State.Connected
-handleAlternateLogonReply clientState connection messageConverters =
+handleAlternateLogonReply :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO (HandlerTypes.PuidCounter, HandlerTypes.PuidCrc)
+handleAlternateLogonReply connection messageConverters =
   do
-    let byteSource = State.palaceByteSource connection
-        intReader = State.palaceIntReader messageConverters
-        shortReader = State.palaceShortReader messageConverters
+    let byteSource = Net.palaceByteSource connection
+        intReader = Net.palaceIntReader messageConverters
+        shortReader = Net.palaceShortReader messageConverters
     PalaceInbound.readAlternateLogonReply byteSource intReader shortReader
-    return clientState
 
-handleServerInfo :: State.Connected -> State.PalaceConnection -> State.PalaceMessageConverters -> Messages.Header -> IO State.Connected
-handleServerInfo clientState connection messageConverters header =
+handleServerInfo :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO (HandlerTypes.PlaceName, HandlerTypes.ServerPermissions)
+handleServerInfo connection messageConverters header =
   do
-    let byteSource = State.palaceByteSource connection
-        intReader = State.palaceIntReader messageConverters
-    (serverName, permissions) <- PalaceInbound.readServerInfo byteSource intReader header 
-    Log.debugM "Incoming.Message.ServerInfo" $ "Server name: " ++ serverName
-    return clientState --TODO add server name and permissions to host state
-  
-handleUserStatus :: State.Connected -> State.PalaceConnection -> State.PalaceMessageConverters -> Messages.Header -> IO State.Connected
-handleUserStatus clientState connection messageConverters header =  
-  do
-    let byteSource = State.palaceByteSource connection
-        shortReader = State.palaceShortReader messageConverters
-    userFlags  <- PalaceInbound.readUserStatus byteSource shortReader header
-    Log.debugM "Incoming.Message.UserStatus" $ "User status -- User flags: " ++ (show userFlags)
-    return clientState -- TODO probably need to do something with this info
+    let byteSource = Net.palaceByteSource connection
+        intReader = Net.palaceIntReader messageConverters
+    PalaceInbound.readServerInfo byteSource intReader header
 
-handleUserLogonNotification :: State.Connected -> State.PalaceConnection -> State.PalaceMessageConverters ->
-                               Map.Map Int Messages.UserId -> Messages.Header -> IO (String, State.Connected)
-handleUserLogonNotification clientState connection messageConverters userMap header =  
+handleUserStatus :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.UserFlags
+handleUserStatus connection messageConverters header =
   do
-    let byteSource = State.palaceByteSource connection
-        intReader = State.palaceIntReader messageConverters
-    (logonId, totalUserCount) <- PalaceInbound.readUserLogonNotification byteSource intReader header
-    let message = "User " ++ (Messages.userName $ Messages.userIdFrom header userMap) ++ " just arrived."
-    Log.debugM  "Incoming.Message.UserLoggedOnAndMax" $  message ++ "  Population: " ++ (show totalUserCount)
-    return (message, clientState)
+    let byteSource = Net.palaceByteSource connection
+        shortReader = Net.palaceShortReader messageConverters
+    PalaceInbound.readUserStatus byteSource shortReader header
 
-handleMediaServerInfo :: State.Connected -> State.PalaceConnection -> Messages.Header -> IO (Net.URL, State.Connected)
-handleMediaServerInfo clientState connection header =  
+handleUserLogonNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO (HandlerTypes.UserRefId, HandlerTypes.PalaceUserCount)
+handleUserLogonNotification connection messageConverters header =
   do
-    let byteSource = State.palaceByteSource connection
-    serverInfo <- PalaceInbound.readMediaServerInfo byteSource header
-    Log.debugM "Incoming.Message.HttpServerLocation" $ "Media server: " ++ serverInfo
-    return (serverInfo, clientState)
+    let byteSource = Net.palaceByteSource connection
+        intReader = Net.palaceIntReader messageConverters
+    PalaceInbound.readUserLogonNotification byteSource intReader header
+
+handleMediaServerInfo :: Net.PalaceConnection -> Messages.Header -> IO Net.URL
+handleMediaServerInfo connection header =
+  do
+    let byteSource = Net.palaceByteSource connection
+    PalaceInbound.readMediaServerInfo byteSource header
 
  -- room name, background image, overlay images, props, hotspots, draw commands
-handleRoomDescription :: State.Connected -> State.PalaceConnection -> State.PalaceMessageConverters ->
-                         Messages.Header -> IO (Messages.RoomDescription, State.Connected)
-handleRoomDescription clientState connection messageConverters header =  
+handleRoomDescription :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.RoomDescription
+handleRoomDescription connection messageConverters header =
   do
-    let byteSource = State.palaceByteSource connection
-        intReader = State.palaceIntReader messageConverters
-        shortReader = State.palaceShortReader messageConverters
-    roomDescription <- PalaceInbound.readRoomDescription byteSource intReader shortReader header
-    Log.debugM "Incoming.Message.GotRoomDescription" $ show roomDescription
-    return (roomDescription, clientState)
+    let byteSource = Net.palaceByteSource connection
+        intReader = Net.palaceIntReader messageConverters
+        shortReader = Net.palaceShortReader messageConverters
+    PalaceInbound.readRoomDescription byteSource intReader shortReader header
   {- OpenPalace also does this when receiving these messages:
 	clearStatusMessage currentRoom
 	clearAlarms
@@ -134,24 +150,20 @@ handleRoomDescription clientState connection messageConverters header =
         Dispatch room change event for scripting
     -}
 
-handleUserList :: State.Connected -> State.PalaceConnection -> Messages.Header -> IO State.Connected
-handleUserList clientState connection header =
+handleUserList :: Net.PalaceConnection -> Messages.Header -> IO ()
+handleUserList connection header =
   do
-    let byteSource = State.palaceByteSource connection
+    let byteSource = Net.palaceByteSource connection
     PalaceInbound.readUserList byteSource header
-    Log.debugM "Incoming.Message.GotUserList" $ "Received user list."
-    return clientState
     {- OpenPalace does:
          currentRoom.removeAllUsers();
     -}
 
-handleNewUserNotification :: State.Connected -> State.PalaceConnection -> Messages.Header -> IO State.Connected
-handleNewUserNotification clientState connection header =
+handleNewUserNotification :: Net.PalaceConnection -> Messages.Header -> IO ()
+handleNewUserNotification connection header =
   do
-    let byteSource = State.palaceByteSource connection    
+    let byteSource = Net.palaceByteSource connection
     PalaceInbound.readNewUserNotification byteSource header
-    Log.debugM "Incoming.Message.UserNew" $ "Received new user notification."
-    return clientState
     {- OpenPalace does:
          PalaceSoundPlayer.getInstance().playConnectionPing();
          And if one's self entered:
@@ -160,40 +172,28 @@ handleNewUserNotification clientState connection header =
          palaceController.triggerHotspotEvents(IptEventHandler.TYPE_ENTER);
     -}
 
-handleTalk :: State.Connected -> State.PalaceConnection -> Map.Map Int Messages.UserId ->
-              Messages.Header -> Messages.ChatMode -> IO (Messages.Communication, State.Connected)
-handleTalk clientState connection userMap header mode =
+handleTalk :: Net.PalaceConnection -> Messages.Header -> IO HandlerTypes.ChatData
+handleTalk connection header =
   do
-    let byteSource = State.palaceByteSource connection
-    chat <- PalaceInbound.readTalk byteSource userMap header mode
-    Log.debugM "Incoming.Message.UnencryptedTalk" (show chat)
-    return (chat, clientState)
+    let byteSource = Net.palaceByteSource connection
+    PalaceInbound.readTalk byteSource header
 
-handleEncodedTalk :: State.Connected -> State.PalaceConnection -> State.PalaceMessageConverters ->
-                     Map.Map Int Messages.UserId -> Messages.Header -> Messages.ChatMode -> IO (Messages.Communication, State.Connected)
-handleEncodedTalk clientState connection messageConverters userMap header mode =
+handleEncodedTalk :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.ChatData
+handleEncodedTalk connection messageConverters header =
   do
-    let byteSource = State.palaceByteSource connection
-        shortReader = State.palaceShortReader messageConverters
-    chat <- PalaceInbound.readEncodedTalk byteSource shortReader userMap header mode
-    Log.debugM "Incoming.Message.EncryptedTalk" (show chat)
-    return (chat, clientState)
+    let byteSource = Net.palaceByteSource connection
+        shortReader = Net.palaceShortReader messageConverters
+    PalaceInbound.readEncodedTalk byteSource shortReader header
 
-handleMovement :: State.Connected -> State.PalaceConnection -> State.PalaceMessageConverters ->
-                  Map.Map Int Messages.UserId -> Messages.Header -> IO State.Connected
-handleMovement clientState connection messageConverters userMap header =
+handleMovement :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.MovementData
+handleMovement connection messageConverters header =
   do
-    let byteSource = State.palaceByteSource connection
-        shortReader = State.palaceShortReader messageConverters
-    movement <- PalaceInbound.readMovement byteSource shortReader userMap header
-    Log.debugM "Incoming.Message.EncryptedTalk" (show movement)
-    -- TODO tell the GUI to move the user (in Handler.hs)
-    -- TODO send action to script event handler when there is scripting?
-    return clientState
+    let byteSource = Net.palaceByteSource connection
+        shortReader = Net.palaceShortReader messageConverters
+    PalaceInbound.readMovement byteSource shortReader header
 
-handleUnknownMessage :: State.Connected -> State.PalaceConnection -> Messages.Header -> IO State.Connected
-handleUnknownMessage clientState connection header =
+handleUnknownMessage :: Net.PalaceConnection -> Messages.Header -> IO ()
+handleUnknownMessage connection header =
   do
-    let byteSource = State.palaceByteSource connection
+    let byteSource = Net.palaceByteSource connection
     PalaceInbound.readUnknown byteSource header
-    return clientState
