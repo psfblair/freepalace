@@ -1,11 +1,10 @@
-module FreePalace.Messages.PalaceProtocol.Inbound where
+module FreePalace.Messages.PalaceProtocol.InboundReader where
 
 import           Control.Applicative
 import           Control.Exception
 import qualified Data.Convertible.Base                        as Convert
 
-import qualified FreePalace.Domain                            as Domain
-import qualified FreePalace.Handlers.Types                    as HandlerTypes
+import qualified FreePalace.Messages.Inbound                  as Events
 import qualified FreePalace.Messages                          as Messages
 import qualified FreePalace.Messages.PalaceProtocol.Obfuscate as Illuminator
 import qualified FreePalace.Net                               as Net
@@ -26,20 +25,20 @@ readHeader connection messageConverters =
       Messages.messageRefNumber = referenceNumber
     }
 
-readHandshake :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO HandlerTypes.HandshakeData
+readHandshake :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Events.InboundHandshake
 readHandshake connection messageConverters =
   do
     header <- readHeader connection messageConverters -- TODO Time out if this takes too long
     let msgType    = Messages.messageType header
         userRefId  = Messages.messageRefNumber header
     case msgType of
-      Messages.BigEndianServer    -> return  $ HandlerTypes.HandshakeData userRefId (HandlerTypes.PalaceProtocol connection HandlerTypes.BigEndian)
-      Messages.LittleEndianServer -> return  $ HandlerTypes.HandshakeData userRefId (HandlerTypes.PalaceProtocol connection HandlerTypes.LittleEndian)
+      Messages.BigEndianServer    -> return  $ Events.InboundHandshake userRefId (Events.PalaceProtocol connection Events.BigEndian)
+      Messages.LittleEndianServer -> return  $ Events.InboundHandshake userRefId (Events.PalaceProtocol connection Events.LittleEndian)
       Messages.UnknownServer      -> throwIO $ userError "Unknown server type"
       _                           -> throwIO $ userError "Invalid server type"
 
 
-readAlternateLogonReply :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO (HandlerTypes.PuidCounter, HandlerTypes.PuidCrc)
+readAlternateLogonReply :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Events.InboundLogonReply
 readAlternateLogonReply connection messageConverters =
   do
     let byteSource = Net.palaceByteSource connection
@@ -72,10 +71,10 @@ readAlternateLogonReply connection messageConverters =
     upload2DGraphicsCapabilities <- readInt
     upload3DEngineCapabilities <- readInt
 
-    return (puidCounter, puidCrc) -- TODO When do these get used?
+    return $ Events.InboundLogonReply puidCounter puidCrc -- TODO When do these get used?
 
 
-readServerInfo :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO (HandlerTypes.PlaceName, HandlerTypes.ServerPermissions)
+readServerInfo :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO Events.InboundServerInfo
 readServerInfo connection messageConverters header =
   do
     let byteSource = Net.palaceByteSource connection
@@ -86,7 +85,7 @@ readServerInfo connection messageConverters header =
     permissions <- readInt
     size <- fromIntegral <$> readByte
     serverName <- readText size
-    return (serverName, permissions)
+    return $ Events.InboundServerInfo serverName permissions
     {- OpenPalace notes:
 	Weird -- this message is supposed to include options and upload/download capabilities, but doesn't.
           options = socket.readUnsignedInt();
@@ -94,7 +93,7 @@ readServerInfo connection messageConverters header =
           downloadCapabilities = socket.readUnsignedInt();
     -}
 
-readUserStatus :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.UserFlags
+readUserStatus :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO Events.InboundUserStatus
 readUserStatus connection messageConverters header =
   do
     let byteSource = Net.palaceByteSource connection
@@ -104,9 +103,9 @@ readUserStatus connection messageConverters header =
         trailingBytes = (Messages.messageSize header) - 2
     userFlags <- readShort
     _ <- readBytes trailingBytes
-    return userFlags
+    return $ Events.InboundUserStatus userFlags
 
-readUserLogonNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO (Domain.UserRefId, HandlerTypes.PalaceUserCount)
+readUserLogonNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO Events.InboundUserLogonNotification
 readUserLogonNotification connection messageConverters header =
   do
     let byteSource = Net.palaceByteSource connection
@@ -114,17 +113,18 @@ readUserLogonNotification connection messageConverters header =
         readInt = Receive.readIntFromNetwork intReader byteSource
         userWhoLoggedOn = Messages.messageRefNumber header
     population <- readInt
-    return (userWhoLoggedOn, population)
+    return $ Events.InboundUserLogonNotification userWhoLoggedOn population
 
-readMediaServerInfo :: Net.PalaceConnection -> Messages.Header -> IO Net.URL
+readMediaServerInfo :: Net.PalaceConnection -> Messages.Header -> IO Events.InboundMediaServerInfo
 readMediaServerInfo connection header =
   do
     let byteSource = Net.palaceByteSource connection
-    Receive.readNullTerminatedTextFromNetwork byteSource $ Messages.messageSize header
+    url <- Receive.readNullTerminatedTextFromNetwork byteSource $ Messages.messageSize header
+    return $ Events.InboundMediaServerInfo url
 
  -- room name, background image, overlay images, props, hotspots, draw commands
 -- TODO Finish this
-readRoomDescription :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.RoomDescription
+readRoomDescription :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO Events.InboundRoomDescription
 readRoomDescription connection messageConverters header =
   do
     let byteSource = Net.palaceByteSource connection
@@ -161,10 +161,10 @@ readRoomDescription connection messageConverters header =
         backgroundImageNameLength = fromIntegral $ head $ drop backgroundImageNameOffset roomData
         backgroundImageName = map Convert.convert $ take backgroundImageNameLength $ drop (backgroundImageNameOffset + 1) roomData
 
-    return HandlerTypes.RoomDescription {
-        HandlerTypes.roomDescId = roomId
-      , HandlerTypes.roomDescName = roomName
-      , HandlerTypes.roomDescBackground = backgroundImageName
+    return Events.InboundRoomDescription {
+        Events.roomDescId = roomId
+      , Events.roomDescName = roomName
+      , Events.roomDescBackground = backgroundImageName
     }
 {- Next, load:
      -- overlay images
@@ -265,23 +265,23 @@ For each draw command -- has a 10-byte header and then a length specified by com
 
 
 -- TODO Finish this
-readUserList :: Net.PalaceConnection -> Messages.Header -> IO ()
+readUserList :: Net.PalaceConnection -> Messages.Header -> IO Events.InboundUserList
 readUserList connection header =
   do
     let byteSource = Net.palaceByteSource connection
     _ <- Receive.readBytesFromNetwork byteSource $ Messages.messageSize header
-    return ()
+    return Events.InboundUserList
 
 -- TODO Finish this
-readNewUserNotification :: Net.PalaceConnection -> Messages.Header -> IO ()
+readNewUserNotification :: Net.PalaceConnection -> Messages.Header -> IO Events.InboundNewUserNotification
 readNewUserNotification connection header =
   do
     let byteSource = Net.palaceByteSource connection
     _ <- Receive.readBytesFromNetwork byteSource $ Messages.messageSize header
-    return ()
+    return Events.InboundNewUserNotification
 
 
-readTalk :: Net.PalaceConnection -> Messages.Header -> IO HandlerTypes.ChatData
+readTalk :: Net.PalaceConnection -> Messages.Header -> IO Events.InboundChat
 readTalk connection header =
   do
     let byteSource = Net.palaceByteSource connection
@@ -291,13 +291,13 @@ readTalk connection header =
 
     message <- truncateChatMessage <$> readText messageLength
 
-    return HandlerTypes.ChatData {
-        HandlerTypes.chatSource = speaking
-      , HandlerTypes.chatRecipient = Nothing
-      , HandlerTypes.chatMessage = message
+    return Events.InboundChat {
+        Events.chatSpeaker = speaking
+      , Events.chatRecipient = Nothing
+      , Events.chatMessage = message
       }
 
-readEncodedTalk :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.ChatData
+readEncodedTalk :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO Events.InboundChat
 readEncodedTalk connection messageConverters header =
   do
     let byteSource = Net.palaceByteSource connection
@@ -311,10 +311,10 @@ readEncodedTalk connection messageConverters header =
     obfuscated <- truncateChatMessage <$> init <$> readBytes (fieldLength - 2)
     let message = Illuminator.illuminate obfuscated
 
-    return HandlerTypes.ChatData {
-        HandlerTypes.chatSource = speaking
-      , HandlerTypes.chatRecipient = Nothing
-      , HandlerTypes.chatMessage = message
+    return Events.InboundChat {
+        Events.chatSpeaker = speaking
+      , Events.chatRecipient = Nothing
+      , Events.chatMessage = message
       }
 
 -- Chat string can't be > 254 characters long
@@ -323,7 +323,7 @@ readEncodedTalk connection messageConverters header =
 truncateChatMessage :: [a] -> [a]
 truncateChatMessage message = take 254 message
 
-readMovement :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.MovementData
+readMovement :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO Events.InboundMovement
 readMovement connection messageConverters header =
   do
     let byteSource = Net.palaceByteSource connection
@@ -332,7 +332,7 @@ readMovement connection messageConverters header =
         mover = Messages.messageRefNumber header
     y <- fromIntegral <$> readShort
     x <- fromIntegral <$> readShort
-    return HandlerTypes.MovementData { HandlerTypes.x = x, HandlerTypes.y = y, HandlerTypes.userWhoMoved = mover }
+    return Events.InboundMovement { Events.x = x, Events.y = y, Events.userWhoMoved = mover }
 
 readUnknownMessage :: Net.PalaceConnection -> Messages.Header -> IO ()
 readUnknownMessage connection header =

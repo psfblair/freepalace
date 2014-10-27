@@ -1,7 +1,7 @@
 module FreePalace.Handlers.State where
 
 import           FreePalace.Domain         as Domain
-import           FreePalace.Handlers.Types as HandlerTypes
+import           FreePalace.Messages.Inbound as Events
 import           FreePalace.Net            as Net
 import           FreePalace.Net.PalaceProtocol.Connect    as Connect
 import           FreePalace.State
@@ -27,13 +27,13 @@ withUserRefId currentState refId =
        }                  
     }
 
-withProtocol :: Connected -> HandlerTypes.ProtocolInfo -> Connected
+withProtocol :: Connected -> Events.ProtocolInfo -> Connected
 withProtocol currentState protocol =
     case protocol of
-      HandlerTypes.PalaceProtocol connection endianness ->
+      Events.PalaceProtocol connection endianness ->
         case endianness of 
-          HandlerTypes.BigEndian    -> currentState { protocolState = PalaceProtocolState connection Connect.bigEndianMessageConverters }
-          HandlerTypes.LittleEndian -> currentState { protocolState = PalaceProtocolState connection Connect.littleEndianMessageConverters }
+          Events.BigEndian    -> currentState { protocolState = PalaceProtocolState connection Connect.bigEndianMessageConverters }
+          Events.LittleEndian -> currentState { protocolState = PalaceProtocolState connection Connect.littleEndianMessageConverters }
   
 initialHostStateFor :: Net.Hostname -> Net.PortId -> HostState
 initialHostStateFor hostName portid = HostState {
@@ -46,8 +46,8 @@ initialHostStateFor hostName portid = HostState {
   , currentRoomState = Nothing
   }
 
-withMediaServerInfo :: Connected -> Net.URL -> Connected
-withMediaServerInfo currentState mediaServerUrl =
+withMediaServerInfo :: Connected -> Events.InboundMediaServerInfo -> Connected
+withMediaServerInfo currentState (Events.InboundMediaServerInfo mediaServerUrl) =
   case Network.parseURI mediaServerUrl of
    Nothing -> currentState  -- If we can't parse it, we just won't update.
    Just uri ->
@@ -58,17 +58,17 @@ withMediaServerInfo currentState mediaServerUrl =
      }
 
 -- TODO This may get more complicated if/when the current room state is affected by more than a RoomDescription message
-withRoomDescription :: Connected -> HandlerTypes.RoomDescription -> Connected
+withRoomDescription :: Connected -> Events.InboundRoomDescription -> Connected
 withRoomDescription currentState roomDescription =
   currentState {
     hostState = (hostState currentState) {
        currentRoomState = Just CurrentRoomState {
-            roomId = HandlerTypes.roomDescId roomDescription
-          , roomName = HandlerTypes.roomDescName roomDescription
-          , roomBackgroundImageName = HandlerTypes.roomDescBackground roomDescription
+            roomId = Events.roomDescId roomDescription
+          , roomName = Events.roomDescName roomDescription
+          , roomBackgroundImageName = Events.roomDescBackground roomDescription
           }
        }
     }
 
-withMovementData :: Connected -> HandlerTypes.MovementData -> (Domain.Movement, Connected)
+withMovementData :: Connected -> Events.InboundMovement -> (Domain.Movement, Connected)
 withMovementData currentState movementData = (Domain.Movement, currentState)

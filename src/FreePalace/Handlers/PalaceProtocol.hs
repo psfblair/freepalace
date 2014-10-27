@@ -5,7 +5,7 @@ import           Control.Exception
 import qualified FreePalace.Domain                           as Domain
 import qualified FreePalace.Handlers.State                   as Handlers
 import qualified FreePalace.Messages                         as Messages
-import qualified FreePalace.Messages.PalaceProtocol.Inbound  as PalaceInbound
+import qualified FreePalace.Messages.PalaceProtocol.InboundReader  as PalaceInbound
 import qualified FreePalace.Messages.PalaceProtocol.Outbound as PalaceOutbound
 import qualified FreePalace.Net                              as Net
 import qualified FreePalace.Net.PalaceProtocol.Connect       as Connect
