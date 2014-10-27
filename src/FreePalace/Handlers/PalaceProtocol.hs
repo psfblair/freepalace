@@ -4,7 +4,6 @@ import           Control.Applicative
 import           Control.Exception
 import qualified FreePalace.Domain                           as Domain
 import qualified FreePalace.Handlers.State                   as Handlers
-import qualified FreePalace.Handlers.Types                   as HandlerTypes
 import qualified FreePalace.Messages                         as Messages
 import qualified FreePalace.Messages.PalaceProtocol.Inbound  as PalaceInbound
 import qualified FreePalace.Messages.PalaceProtocol.Outbound as PalaceOutbound
@@ -47,21 +46,6 @@ connect priorState host port =
     , State.settings = State.disconnectedSettings priorState
     }
 
-handleHandshake :: State.Connected -> Net.PalaceConnection -> Net.PalaceMessageConverters -> IO State.Connected
-handleHandshake clientState connection messageConverters =
-  do
-    header <- readHeader connection messageConverters -- TODO Time out if this takes too long
-    let msgType    = Messages.messageType header
-        userRefId  = Messages.messageRefNumber header
-        currentUserState = State.userState clientState
-        newState   = clientState { State.userState = State.LoggedIn { State.userId = Handlers.userIdFor currentUserState userRefId }}
-    Log.debugM "Incoming.Handshake" (show msgType)
-    case msgType of
-      Messages.BigEndianServer    -> return  $ newState
-      Messages.LittleEndianServer -> return  $ newState { State.protocolState = State.PalaceProtocolState connection Connect.littleEndianMessageConverters }
-      Messages.UnknownServer      -> throwIO $ userError "Unknown server type"
-      _                           -> throwIO $ userError "Invalid server type"
-
 sendLogin :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Domain.UserId -> IO ()
 sendLogin Net.PalaceConnection { Net.palaceByteSink = byteSink } messageConverters userId =
   do
@@ -90,110 +74,3 @@ speak Net.PalaceConnection { Net.palaceByteSink = byteSink } messageConverters u
     Log.debugM "Outgoing.Talk" (show communication)
     Send.writeBytesToSink byteSink chatMessageBytes
 
-readHeader :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Messages.Header
-readHeader connection messageConverters =
-  do
-    let byteSource = Net.palaceByteSource connection
-        intReader = Net.palaceIntReader messageConverters
-    PalaceInbound.readHeader byteSource intReader
-
-handleAlternateLogonReply :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO (HandlerTypes.PuidCounter, HandlerTypes.PuidCrc)
-handleAlternateLogonReply connection messageConverters =
-  do
-    let byteSource = Net.palaceByteSource connection
-        intReader = Net.palaceIntReader messageConverters
-        shortReader = Net.palaceShortReader messageConverters
-    PalaceInbound.readAlternateLogonReply byteSource intReader shortReader
-
-handleServerInfo :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO (HandlerTypes.PlaceName, HandlerTypes.ServerPermissions)
-handleServerInfo connection messageConverters header =
-  do
-    let byteSource = Net.palaceByteSource connection
-        intReader = Net.palaceIntReader messageConverters
-    PalaceInbound.readServerInfo byteSource intReader header
-
-handleUserStatus :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.UserFlags
-handleUserStatus connection messageConverters header =
-  do
-    let byteSource = Net.palaceByteSource connection
-        shortReader = Net.palaceShortReader messageConverters
-    PalaceInbound.readUserStatus byteSource shortReader header
-
-handleUserLogonNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO (Domain.UserRefId, HandlerTypes.PalaceUserCount)
-handleUserLogonNotification connection messageConverters header =
-  do
-    let byteSource = Net.palaceByteSource connection
-        intReader = Net.palaceIntReader messageConverters
-    PalaceInbound.readUserLogonNotification byteSource intReader header
-
-handleMediaServerInfo :: Net.PalaceConnection -> Messages.Header -> IO Net.URL
-handleMediaServerInfo connection header =
-  do
-    let byteSource = Net.palaceByteSource connection
-    PalaceInbound.readMediaServerInfo byteSource header
-
- -- room name, background image, overlay images, props, hotspots, draw commands
-handleRoomDescription :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.RoomDescription
-handleRoomDescription connection messageConverters header =
-  do
-    let byteSource = Net.palaceByteSource connection
-        intReader = Net.palaceIntReader messageConverters
-        shortReader = Net.palaceShortReader messageConverters
-    PalaceInbound.readRoomDescription byteSource intReader shortReader header
-  {- OpenPalace also does this when receiving these messages:
-	clearStatusMessage currentRoom
-	clearAlarms
-	midiStop
-     and after parsing the information:
-        Dim room 100
-        Room.showAvatars = true -- scripting can hide all avatars
-        Dispatch room change event for scripting
-    -}
-
-handleUserList :: Net.PalaceConnection -> Messages.Header -> IO ()
-handleUserList connection header =
-  do
-    let byteSource = Net.palaceByteSource connection
-    PalaceInbound.readUserList byteSource header
-    {- OpenPalace does:
-         currentRoom.removeAllUsers();
-    -}
-
-handleNewUserNotification :: Net.PalaceConnection -> Messages.Header -> IO ()
-handleNewUserNotification connection header =
-  do
-    let byteSource = Net.palaceByteSource connection
-    PalaceInbound.readNewUserNotification byteSource header
-    {- OpenPalace does:
-         PalaceSoundPlayer.getInstance().playConnectionPing();
-         And if one's self entered:
-         if (needToRunSignonHandlers) {  palaceController.triggerHotspotEvents(IptEventHandler.TYPE_SIGNON);
-					 needToRunSignonHandlers = false; }
-         palaceController.triggerHotspotEvents(IptEventHandler.TYPE_ENTER);
-    -}
-
-handleTalk :: Net.PalaceConnection -> Messages.Header -> IO HandlerTypes.ChatData
-handleTalk connection header =
-  do
-    let byteSource = Net.palaceByteSource connection
-    PalaceInbound.readTalk byteSource header
-
-handleEncodedTalk :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.ChatData
-handleEncodedTalk connection messageConverters header =
-  do
-    let byteSource = Net.palaceByteSource connection
-        shortReader = Net.palaceShortReader messageConverters
-    PalaceInbound.readEncodedTalk byteSource shortReader header
-
-handleMovement :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Messages.Header -> IO HandlerTypes.MovementData
-handleMovement connection messageConverters header =
-  do
-    let byteSource = Net.palaceByteSource connection
-        shortReader = Net.palaceShortReader messageConverters
-    PalaceInbound.readMovement byteSource shortReader header
-
-handleUnknownMessage :: Net.PalaceConnection -> Messages.Header -> IO ()
-handleUnknownMessage connection header =
-  do
-    let byteSource = Net.palaceByteSource connection
-    PalaceInbound.readUnknown byteSource header

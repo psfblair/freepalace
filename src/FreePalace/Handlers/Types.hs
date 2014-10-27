@@ -2,6 +2,7 @@ module FreePalace.Handlers.Types where
 
 import           Data.Word
 import qualified FreePalace.Domain as Domain
+import qualified FreePalace.Net as Net
 
 type UserFlags = Word16
 type PlaceName = String
@@ -11,6 +12,17 @@ type ChatMessage = String
 type PuidCounter = Int
 type PuidCrc = Int
 
+data ProtocolInfo = PalaceProtocol Net.PalaceConnection Endianness
+instance Show ProtocolInfo where
+  show (PalaceProtocol _ _) = "Palace Protocol"
+
+data Endianness = BigEndian | LittleEndian deriving Show
+
+data HandshakeData = HandshakeData {
+    userRefId :: Domain.UserRefId
+  , protocolInfo :: ProtocolInfo
+  } deriving Show
+                     
 data ChatData = ChatData {
     chatSource    :: Domain.UserRefId
   , chatRecipient :: Maybe Domain.UserRefId
