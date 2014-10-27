@@ -1,6 +1,8 @@
 module FreePalace.Handlers where
 
 import           Control.Concurrent
+import           Control.Exception
+import           Control.Applicative
 import qualified Data.Map                           as Map
 import qualified System.Log.Logger                  as Log
 
@@ -8,7 +10,9 @@ import qualified FreePalace.Domain                  as Domain
 import qualified FreePalace.GUI.Types               as GUI
 import qualified FreePalace.Handlers.PalaceProtocol as PalaceHandlers
 import qualified FreePalace.Messages.PalaceProtocol.InboundReader as PalaceInbound
+import qualified FreePalace.Messages.PalaceProtocol.OutboundWriter as PalaceOutbound
 import qualified FreePalace.Handlers.State          as StateHandlers
+import qualified FreePalace.Net.PalaceProtocol.Connect as Connect
 import qualified FreePalace.Messages.Inbound        as InboundEvents
 import qualified FreePalace.Media.Loader            as MediaLoader
 import qualified FreePalace.Messages                as Messages
@@ -42,16 +46,17 @@ bindUserTextEntry guiComponents userTextEntryHandler =
 handleConnectRequested :: State.ClientState -> Net.Protocol -> Net.Hostname -> Net.PortId -> IO ()
 handleConnectRequested clientState protocol host port =
   do
-    newState <- case protocol of
-      Net.PalaceProtocol -> PalaceHandlers.handleConnectRequested clientState host port
+    disconnected <- disconnect clientState protocol
+    newState <- catch (State.ConnectedState <$> connect disconnected protocol host port)
+                      (\(SomeException exception) ->
+                        do
+                          Log.errorM "Connection" $ show exception
+                          return $ State.DisconnectedState disconnected)
+
     case newState of
-     State.DisconnectedState disconnected ->
+     State.ConnectedState connectedState ->
        do
-         GUI.closeDialog . GUI.connectDialog . State.disconnectedGui $ disconnected  -- TODO Show connection error somehow or something in GUI indicating failure
-         return ()
-     State.ConnectedState connected ->
-       do
-         readyState <- handleHandshake connected
+         readyState <- handleHandshake connectedState
          -- TODO Must bind disconnect and reconnect to something that will stop the forked process
          -- i.e., Control.Concurrent.killThread :: ThreadId -> IO ()
          -- TODO If this thread dies or an exception is thrown on it, need to handle the disconnect
@@ -60,6 +65,25 @@ handleConnectRequested clientState protocol host port =
          sendLogin readyState
          GUI.closeDialog . GUI.connectDialog . State.guiState $ readyState
          return ()
+     State.DisconnectedState disconnectedState ->
+       do
+         GUI.closeDialog . GUI.connectDialog . State.disconnectedGui $ disconnectedState  -- TODO Show connection error somehow or something in GUI indicating failure
+         return ()
+
+disconnect :: State.ClientState -> Net.Protocol -> IO State.Disconnected
+disconnect (State.DisconnectedState disconnected) _ = return disconnected
+disconnect (State.ConnectedState priorState) Net.PalaceProtocol =
+  do
+    case State.protocolState priorState of
+      State.PalaceProtocolState connection _ -> Connect.disconnect connection -- This does not rethrow exceptions.
+    return $ StateHandlers.disconnectedStateFrom priorState
+
+connect :: State.Disconnected -> Net.Protocol -> Net.Hostname -> Net.PortId -> IO State.Connected
+connect priorState Net.PalaceProtocol host port =
+  do
+    connection <- Connect.connect host port
+    let protocol = State.PalaceProtocolState connection Connect.defaultPalaceMessageConverters
+    return $ StateHandlers.initialConnectedState priorState protocol host port
 
 handleHandshake :: State.Connected -> IO State.Connected
 handleHandshake clientState =
@@ -76,8 +100,9 @@ sendLogin :: State.Connected -> IO ()
 sendLogin clientState =
   do
     let userId = State.userId $ State.userState clientState
+    Log.debugM "Outgoing.Login" "Sending login..."
     case State.protocolState clientState of
-      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.sendLogin connection messageConverters userId
+      State.PalaceProtocolState connection messageConverters -> PalaceOutbound.sendLogin connection messageConverters userId
 
 -- TODO The handler has to see if 1) it's connected, 2) it's a client command, 3) it's a script call, 4) a user is selected (for whisper)
 speak :: State.Connected -> IO ()
@@ -87,8 +112,17 @@ speak clientState =
         selectedUser      = Nothing -- TODO - get selected user from ... ?
         textEntryField    = GUI.chatEntry $ State.guiState clientState
     messageText <- GUI.textValue textEntryField
+    
+    -- TODO check the initial character of the message for instructions
+    let communication = Domain.Communication {
+            Domain.speaker = userId
+          , Domain.target = selectedUser
+          , Domain.message = messageText
+          , Domain.chatMode = Domain.Outbound
+          }
+    Log.debugM "Outgoing.Talk" (show communication)
     case State.protocolState clientState of
-      State.PalaceProtocolState connection messageConverters -> PalaceHandlers.speak connection messageConverters userId messageText selectedUser
+      State.PalaceProtocolState connection messageConverters -> PalaceOutbound.speak connection messageConverters communication
     GUI.clearTextEntry textEntryField
 
 -- TODO Handle connection loss

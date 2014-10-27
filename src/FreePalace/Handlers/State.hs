@@ -13,6 +13,35 @@ defaultSettings = Settings {
     thisUserName = "Haskell Curry"  -- TODO allow user to set user name
   }
 
+initialConnectedState :: Disconnected -> ProtocolState -> Net.Hostname -> Net.PortId -> Connected
+initialConnectedState priorState protocol host port =
+  case protocol of
+   PalaceProtocolState _ _ -> Connected {
+      protocolState = protocol
+    , guiState = disconnectedGui priorState
+    , hostState = initialHostStateFor host port
+    , hostDirectory = Domain.HostDirectory
+    , userState = NotLoggedIn { username = thisUserName . disconnectedSettings $ priorState }
+    , settings = disconnectedSettings priorState
+    }
+
+initialHostStateFor :: Net.Hostname -> Net.PortId -> HostState
+initialHostStateFor hostName portid = HostState {
+    hostname = hostName
+  , portId = portid
+  , mediaServer = Nothing
+  , roomList = Domain.RoomList
+  , userList = Domain.UserList
+  , chatLog = Domain.ChatLog []
+  , currentRoomState = Nothing
+  }
+
+disconnectedStateFrom :: Connected -> Disconnected
+disconnectedStateFrom priorState =
+    let gui = guiState priorState
+        priorSettings = settings priorState
+    in Disconnected gui Domain.HostDirectory priorSettings
+
 withUserRefId :: Connected -> Domain.UserRefId -> Connected
 withUserRefId currentState refId =
   let currentUserName = case userState currentState of
@@ -34,17 +63,6 @@ withProtocol currentState protocol =
         case endianness of 
           Events.BigEndian    -> currentState { protocolState = PalaceProtocolState connection Connect.bigEndianMessageConverters }
           Events.LittleEndian -> currentState { protocolState = PalaceProtocolState connection Connect.littleEndianMessageConverters }
-  
-initialHostStateFor :: Net.Hostname -> Net.PortId -> HostState
-initialHostStateFor hostName portid = HostState {
-    hostname = hostName
-  , portId = portid
-  , mediaServer = Nothing
-  , roomList = Domain.RoomList
-  , userList = Domain.UserList
-  , chatLog = Domain.ChatLog []
-  , currentRoomState = Nothing
-  }
 
 withMediaServerInfo :: Connected -> Events.InboundMediaServerInfo -> Connected
 withMediaServerInfo currentState (Events.InboundMediaServerInfo mediaServerUrl) =
