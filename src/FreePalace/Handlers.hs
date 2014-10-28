@@ -11,7 +11,6 @@ import qualified FreePalace.Domain.GUI                             as GUI
 import qualified FreePalace.Domain.Net                             as Net
 import qualified FreePalace.Domain.State                           as State
 import qualified FreePalace.Domain.User                            as User
-import qualified FreePalace.Handlers.State                         as StateHandlers
 import qualified FreePalace.Media.Loader                           as MediaLoader
 import qualified FreePalace.Messages                               as Messages
 import qualified FreePalace.Messages.Inbound                       as InboundEvents
@@ -47,6 +46,7 @@ handleConnectRequested :: State.ClientState -> Net.Protocol -> Net.Hostname -> N
 handleConnectRequested clientState protocol host port =
   do
     disconnected <- disconnect clientState protocol
+    Log.debugM "Connection" $ "Connecting to " ++ host ++ ":" ++ port
     newState <- catch (State.ConnectedState <$> connect disconnected protocol host port)
                       (\(SomeException exception) ->
                         do
@@ -76,25 +76,31 @@ disconnect (State.ConnectedState priorState) Net.PalaceProtocol =
   do
     case State.protocolState priorState of
       State.PalaceProtocolState connection _ -> Connect.disconnect connection -- This does not rethrow exceptions.
-    return $ StateHandlers.disconnectedStateFrom priorState
+    return $ State.disconnectedStateFrom priorState
 
 connect :: State.Disconnected -> Net.Protocol -> Net.Hostname -> Net.PortId -> IO State.Connected
 connect priorState Net.PalaceProtocol host port =
   do
     connection <- Connect.connect host port
     let protocol = State.PalaceProtocolState connection Connect.defaultPalaceMessageConverters
-    return $ StateHandlers.initialConnectedState priorState protocol host port
+    return $ State.initialConnectedState priorState protocol host port
 
 handleHandshake :: State.Connected -> IO State.Connected
 handleHandshake clientState =
   do
-    handshakeData <- case State.protocolState clientState of
-      State.PalaceProtocolState connection messageConverters -> PalaceInbound.readHandshake connection messageConverters
+    (handshakeData, newState) <- handleProtocolUpdate clientState $ State.protocolState clientState
     Log.debugM "Incoming.Handshake" (show handshakeData)
-    let protocolInfo = InboundEvents.protocolInfo handshakeData
-        userRefId = InboundEvents.userRefId handshakeData
-        newState = StateHandlers.withUserRefId clientState userRefId
-    return $ StateHandlers.withProtocol newState protocolInfo
+    let userRefId = InboundEvents.userRefId handshakeData
+    return $ State.withUserRefId newState userRefId
+
+handleProtocolUpdate :: State.Connected -> State.ProtocolState ->  IO (InboundEvents.InboundHandshake, State.Connected)
+handleProtocolUpdate clientState (State.PalaceProtocolState connection messageConverters) =
+  do
+    inboundHandshake <- PalaceInbound.readHandshake connection messageConverters
+    let InboundEvents.PalaceProtocol _ endianness = InboundEvents.protocolInfo inboundHandshake
+        newMessageConverters = Connect.messageConvertersFor endianness
+        updatedState = State.withProtocol clientState (State.PalaceProtocolState connection newMessageConverters)
+    return (inboundHandshake, updatedState)
 
 sendLogin :: State.Connected -> IO ()
 sendLogin clientState =
@@ -213,7 +219,7 @@ handleMediaServerInfo clientState header =
     serverInfo <- case State.protocolState clientState of
       State.PalaceProtocolState connection _ -> PalaceInbound.readMediaServerInfo connection header
     Log.debugM "Incoming.Message.HttpServerLocation" $ show serverInfo
-    let newState = StateHandlers.withMediaServerInfo clientState serverInfo
+    let newState = State.withMediaServerInfo clientState serverInfo
     _  <- loadRoomBackgroundImage newState
     Log.debugM "Incoming.Message.HttpServerLocation.Processed" $ "New state: " ++ (show newState)
     return newState
@@ -226,7 +232,7 @@ handleRoomDescription clientState header =
                         State.PalaceProtocolState connection messageConverters ->
                           PalaceInbound.readRoomDescription connection messageConverters header
     Log.debugM "Incoming.Message.GotRoomDescription" $ show roomDescription
-    let newState = StateHandlers.withRoomDescription clientState roomDescription
+    let newState = State.withRoomDescription clientState roomDescription
     _ <- loadRoomBackgroundImage newState
     Log.debugM "Incoming.Message.GotRoomDescription.Processed" $ "New state: " ++ (show newState)
     return newState
@@ -302,7 +308,7 @@ handleMovement clientState header =
     movementData <- case State.protocolState clientState of
       State.PalaceProtocolState connection messageConverters -> PalaceInbound.readMovement connection messageConverters header
     Log.debugM "Incoming.Message.Movement" $ show movementData
-    let (_, newState) = StateHandlers.withMovementData clientState movementData
+    let (_, newState) = State.withMovementData clientState movementData
     -- TODO tell the GUI to move the user (in Handler.hs)
     -- TODO send action to script event handler when there is scripting?
     return newState

@@ -11,6 +11,7 @@ data InboundHandshake = InboundHandshake {
   , protocolInfo :: ProtocolInfo
   } deriving Show
 
+-- TODO Would be nice not to have a PalaceProtocol reference in here
 data ProtocolInfo = PalaceProtocol Net.PalaceConnection Endianness
 instance Show ProtocolInfo where
   show (PalaceProtocol _ _) = "Palace Protocol"

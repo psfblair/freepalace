@@ -4,6 +4,7 @@ import           Control.Exception
 import qualified Data.Binary.Get              as Get
 import qualified Data.ByteString.Lazy.Builder as Builder
 import qualified FreePalace.Domain.Net        as Net
+import qualified FreePalace.Messages.Inbound  as InboundEvents
 import qualified Network.Socket               as Socket hiding (recv, recvFrom,
                                                          send, sendTo)
 
@@ -32,6 +33,10 @@ disconnect connection =
 
 defaultPalaceMessageConverters :: Net.PalaceMessageConverters
 defaultPalaceMessageConverters = bigEndianMessageConverters
+
+messageConvertersFor :: InboundEvents.Endianness -> Net.PalaceMessageConverters
+messageConvertersFor InboundEvents.BigEndian = bigEndianMessageConverters 
+messageConvertersFor InboundEvents.LittleEndian = littleEndianMessageConverters
 
 bigEndianMessageConverters :: Net.PalaceMessageConverters
 bigEndianMessageConverters = Net.PalaceMessageConverters {
