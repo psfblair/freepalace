@@ -8,7 +8,7 @@ import qualified Network.Socket.ByteString.Lazy as NetworkLazyByteString
 
 import           Control.Applicative
 
-import qualified FreePalace.Net                 as Net
+import qualified FreePalace.Domain.Net          as Net
 
 readNullTerminatedTextFromNetwork :: Net.IncomingByteSource -> Int -> IO String
 readNullTerminatedTextFromNetwork byteSource numberOfCharacters =

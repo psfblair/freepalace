@@ -1,9 +1,12 @@
-module FreePalace.State where
+module FreePalace.Domain.State where
 
-import qualified FreePalace.Domain    as Domain
-import qualified FreePalace.GUI.Types as GUI
-import qualified FreePalace.Net       as Net
-import qualified Network.URI          as Network
+import qualified FreePalace.Domain.Chat  as Chat
+import qualified FreePalace.Domain.GUI   as GUI
+import qualified FreePalace.Domain.Host  as Host
+import qualified FreePalace.Domain.Media as Media
+import qualified FreePalace.Domain.Net   as Net
+import qualified FreePalace.Domain.User  as User
+import qualified Network.URI             as Network
 
 data ClientState =
     DisconnectedState Disconnected
@@ -11,7 +14,7 @@ data ClientState =
 
 data Disconnected = Disconnected {
     disconnectedGui           :: GUI.Components
-  , disconnectedHostDirectory :: Domain.HostDirectory
+  , disconnectedHostDirectory :: Host.HostDirectory
   , disconnectedSettings      :: Settings
   }
 
@@ -20,12 +23,12 @@ data Connected = Connected {
   , protocolState :: ProtocolState
   , guiState      :: GUI.Components
   , hostState     :: HostState
-  , hostDirectory :: Domain.HostDirectory
+  , hostDirectory :: Host.HostDirectory
   , userState     :: UserState
   } deriving Show
 
 data Settings = Settings {
-    thisUserName :: Domain.UserName
+    thisUserName :: User.UserName
   -- TODO  maxCacheSize
   -- TODO  roomDimensions
   } deriving Show
@@ -40,16 +43,16 @@ data HostState = HostState {
   -- , serverName       :: Maybe Domain.ServerName
   -- TODO , serverVersion :: ServerVersion
   , mediaServer      :: Maybe Network.URI
-  , roomList         :: Domain.RoomList
-  , userList         :: Domain.UserList
-  , chatLog          :: Domain.ChatLog
+  , roomList         :: Host.RoomList
+  , userList         :: User.UserList
+  , chatLog          :: Chat.ChatLog
   , currentRoomState :: Maybe CurrentRoomState
   } deriving Show
 
 data CurrentRoomState = CurrentRoomState {
-    roomId                  :: Domain.RoomId
-  , roomName                :: Domain.RoomName
-  , roomBackgroundImageName :: Domain.ImageFilename
+    roomId                  :: Host.RoomId
+  , roomName                :: Host.RoomName
+  , roomBackgroundImageName :: Media.ImageFilename
   -- TODO inhabitants ??
   -- TODO overlay images - id, name, transpatency index
   -- TODO hotspots - these come in layers - above avatars, above name tags, above all, above nothing.
@@ -60,9 +63,9 @@ data CurrentRoomState = CurrentRoomState {
   -- TODO draw commands
   } deriving Show
 
-data UserState = NotLoggedIn { username :: Domain.UserName }
+data UserState = NotLoggedIn { username :: User.UserName }
                | LoggedIn    {
-  userId :: Domain.UserId
+  userId :: User.UserId
   -- TODO props
   -- TODO sounds
   -- TODO settings

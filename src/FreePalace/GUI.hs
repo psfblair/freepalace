@@ -1,7 +1,7 @@
 module FreePalace.GUI where
 
-import           FreePalace.GUI.Types
-import qualified FreePalace.Net       as Net
+import           FreePalace.Domain.GUI
+import qualified FreePalace.Domain.Net as Net
 
 initializeGUI :: Components -> (Net.Hostname -> Net.PortId -> IO ()) -> IO ()
 initializeGUI guiComponents handler =

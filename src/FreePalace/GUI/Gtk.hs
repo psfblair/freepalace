@@ -7,8 +7,9 @@ import qualified Graphics.UI.Gtk.Display.Image   as Image
 import qualified Graphics.UI.Gtk.Gdk.Events      as Events
 import qualified Graphics.UI.Gtk.Gdk.Pixbuf      as Pixbuf
 
-import qualified FreePalace.Domain               as Domain
-import qualified FreePalace.GUI.Types            as GUI
+import qualified FreePalace.Domain.Chat          as Chat
+import qualified FreePalace.Domain.GUI           as GUI
+import qualified FreePalace.Domain.User          as User
 
 data GtkGui = GtkGui {
     mainWindow       :: Window
@@ -146,8 +147,8 @@ wrapLogWindow gui =
                            -- TODO Handle different message types: whisper, room message, thought balloon, etc. using styled text
                            -- TODO - ultimately want this in 2-column format, with message wrapping only in right-hand column
                            -- TODO - want timestamp when we actually save the log, but not for display
-                           let user = Domain.userName $ Domain.speaker chat
-                               message = Domain.message chat
+                           let user = User.userName $ Chat.speaker chat
+                               message = Chat.message chat
                                stringToLog = user ++ ":\t" ++ message ++ "\n"
                            iter <- textBufferGetEndIter textBuffer
                            textBufferInsert textBuffer iter stringToLog

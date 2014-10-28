@@ -1,11 +1,12 @@
 module FreePalace.Messages.PalaceProtocol.OutboundWriter where
 
-import FreePalace.Net as Net
-import FreePalace.Domain as Domain
-import FreePalace.Net.Send as Send
-import FreePalace.Messages.PalaceProtocol.Outbound as PalaceOutbound
+import           FreePalace.Domain.Chat                      as Chat
+import           FreePalace.Domain.Net                       as Net
+import           FreePalace.Domain.User                      as User
+import           FreePalace.Messages.PalaceProtocol.Outbound as PalaceOutbound
+import           FreePalace.Net.Send                         as Send
 
-sendLogin :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Domain.UserId -> IO ()
+sendLogin :: Net.PalaceConnection -> Net.PalaceMessageConverters -> User.UserId -> IO ()
 sendLogin Net.PalaceConnection { Net.palaceByteSink = byteSink } messageConverters userId =
   do
     let intsToBuilder     = Send.toIntByteStringBuilder   $ Net.palaceIntWriter   messageConverters
@@ -14,7 +15,7 @@ sendLogin Net.PalaceConnection { Net.palaceByteSink = byteSink } messageConverte
     Send.writeBytesToSink byteSink loginMessageBytes
 
 -- TODO The handler has to see if 1) it's a client command, 2) it's a script call, 3) a user is selected (for whisper)
-speak :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Domain.Communication -> IO ()
+speak :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Chat.Communication -> IO ()
 speak Net.PalaceConnection { Net.palaceByteSink = byteSink } messageConverters communication =
   do
     let intsToBuilder     = Send.toIntByteStringBuilder   $ Net.palaceIntWriter   messageConverters

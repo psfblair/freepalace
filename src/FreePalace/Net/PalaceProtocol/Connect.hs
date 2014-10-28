@@ -3,7 +3,7 @@ module FreePalace.Net.PalaceProtocol.Connect where
 import           Control.Exception
 import qualified Data.Binary.Get              as Get
 import qualified Data.ByteString.Lazy.Builder as Builder
-import qualified FreePalace.Net               as Net
+import qualified FreePalace.Domain.Net        as Net
 import qualified Network.Socket               as Socket hiding (recv, recvFrom,
                                                          send, sendTo)
 

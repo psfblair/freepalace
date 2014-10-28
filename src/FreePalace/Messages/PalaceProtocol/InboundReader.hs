@@ -4,10 +4,10 @@ import           Control.Applicative
 import           Control.Exception
 import qualified Data.Convertible.Base                        as Convert
 
-import qualified FreePalace.Messages.Inbound                  as Events
+import qualified FreePalace.Domain.Net                        as Net
 import qualified FreePalace.Messages                          as Messages
+import qualified FreePalace.Messages.Inbound                  as Events
 import qualified FreePalace.Messages.PalaceProtocol.Obfuscate as Illuminator
-import qualified FreePalace.Net                               as Net
 import qualified FreePalace.Net.Receive                       as Receive
 
 readHeader :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Messages.Header

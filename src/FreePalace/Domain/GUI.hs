@@ -1,9 +1,9 @@
-module FreePalace.GUI.Types where
+module FreePalace.Domain.GUI where
 
 -- TODO Need Disconnect menu item and Quit menu item
 
-import qualified FreePalace.Domain as Domain
-import qualified System.FilePath   as Path
+import qualified FreePalace.Domain.Chat as Chat
+import qualified System.FilePath        as Path
 
 data MainWindow = MainWindow {
   quit              :: IO (),
@@ -15,7 +15,7 @@ data MainWindow = MainWindow {
 data LogWindow = LogWindow {
   showLogWindow  :: IO (),
   closeLogWindow :: IO (),
-  appendMessage  :: Domain.Communication -> IO ()
+  appendMessage  :: Chat.Communication -> IO ()
 }
 
 data Dialog = Dialog {

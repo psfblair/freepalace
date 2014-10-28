@@ -1,4 +1,4 @@
-module FreePalace.Net where
+module FreePalace.Domain.Net where
 
 import qualified Data.Binary.Get              as Get
 import qualified Data.ByteString.Lazy.Builder as Builder

@@ -10,7 +10,7 @@ import           Data.Monoid
 import           Data.Word
 import qualified Network.Socket.ByteString.Lazy as NetworkLazyByteString
 
-import qualified FreePalace.Net                 as Net
+import qualified FreePalace.Domain.Net          as Net
 import           FreePalace.Net.Utils
 
 writeBytesToSink :: Net.OutgoingByteSink -> LazyByteString.ByteString -> IO ()

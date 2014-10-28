@@ -5,7 +5,8 @@ import qualified Data.ByteString.Builder                      as Builder
 import qualified Data.ByteString.Lazy                         as LazyByteString
 import           Data.Word
 
-import qualified FreePalace.Domain                            as Domain
+import qualified FreePalace.Domain.Chat                       as Chat
+import qualified FreePalace.Domain.User                       as User
 import qualified FreePalace.Messages                          as Messages
 import qualified FreePalace.Messages.PalaceProtocol.Obfuscate as Obfuscate
 import qualified FreePalace.Net.Send                          as Send
@@ -13,7 +14,7 @@ import           FreePalace.Net.Utils
 
 type UserName = String
 
-loginMessage :: ([Int] -> Builder.Builder) -> ([Word16] -> Builder.Builder) -> Domain.UserId -> LazyByteString.ByteString
+loginMessage :: ([Int] -> Builder.Builder) -> ([Word16] -> Builder.Builder) -> User.UserId -> LazyByteString.ByteString
 loginMessage intsToBuilder shortsToBuilder userId =
   let stringBuilder = Send.toWin1252ByteStringBuilder
       byteBuilder = Send.toSingleByteBuilder
@@ -23,7 +24,7 @@ loginMessage intsToBuilder shortsToBuilder userId =
       referenceNumber = 0
       guestRegCodeCrc = 0x5905f923      -- TODO get this from Registration code if user is not a guest
       guestRegCodeCounter = 0xcf07309c  -- TODO get this from Registration code if user is not a guest
-      userName = Domain.userName userId
+      userName = User.userName userId
       userNameLength = min 31 $ length userName -- TODO move this constraint to the UserId itself
       -- TODO Wizard password goes in characters starting at 32
       paddedUserName = stringBuilder $ ensureLength 63 '\0' userName --TODO check that the last character can be non-null
@@ -60,12 +61,12 @@ loginMessage intsToBuilder shortsToBuilder userId =
 
   in Builder.toLazyByteString builder
 
-chatMessage :: ([Int] -> Builder.Builder) -> ([Word16] -> Builder.Builder) -> Domain.Communication -> LazyByteString.ByteString
+chatMessage :: ([Int] -> Builder.Builder) -> ([Word16] -> Builder.Builder) -> Chat.Communication -> LazyByteString.ByteString
 chatMessage intsToBuilder shortsToBuilder communication =
-  let encoded = Obfuscate.obfuscate $ Domain.message communication
+  let encoded = Obfuscate.obfuscate $ Chat.message communication
       messageLength = fromIntegral $ LazyByteString.length encoded
-      userRefId = Domain.userRef $ Domain.speaker communication
-      header = case Domain.target communication of
+      userRefId = User.userRef $ Chat.speaker communication
+      header = case Chat.target communication of
         Just target -> whisperHeader messageLength userRefId target
         Nothing -> talkHeader messageLength userRefId
 
@@ -81,11 +82,11 @@ talkHeader messageLength userRefId  =
   in messageType : totalLength : userRefId : []
 
 -- This is actually a header plus a field for the target
-whisperHeader :: Int -> Int -> Domain.UserId -> [Int]
+whisperHeader :: Int -> Int -> User.UserId -> [Int]
 whisperHeader messageLength userRefId target =
   let totalLength = messageLength + 7
       messageType = Messages.messageTypeId Messages.Whisper
-      targetRefId = Domain.userRef target
+      targetRefId = User.userRef target
   in messageType : totalLength : userRefId : targetRefId : []
 
 ensureLength :: Int -> a -> [a] -> [a]

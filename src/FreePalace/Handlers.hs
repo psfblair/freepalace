@@ -1,23 +1,23 @@
 module FreePalace.Handlers where
 
+import           Control.Applicative
 import           Control.Concurrent
 import           Control.Exception
-import           Control.Applicative
-import qualified Data.Map                           as Map
-import qualified System.Log.Logger                  as Log
+import qualified Data.Map                                          as Map
+import qualified System.Log.Logger                                 as Log
 
-import qualified FreePalace.Domain                  as Domain
-import qualified FreePalace.GUI.Types               as GUI
-import qualified FreePalace.Handlers.PalaceProtocol as PalaceHandlers
-import qualified FreePalace.Messages.PalaceProtocol.InboundReader as PalaceInbound
+import qualified FreePalace.Domain.Chat                            as Chat
+import qualified FreePalace.Domain.GUI                             as GUI
+import qualified FreePalace.Domain.Net                             as Net
+import qualified FreePalace.Domain.State                           as State
+import qualified FreePalace.Domain.User                            as User
+import qualified FreePalace.Handlers.State                         as StateHandlers
+import qualified FreePalace.Media.Loader                           as MediaLoader
+import qualified FreePalace.Messages                               as Messages
+import qualified FreePalace.Messages.Inbound                       as InboundEvents
+import qualified FreePalace.Messages.PalaceProtocol.InboundReader  as PalaceInbound
 import qualified FreePalace.Messages.PalaceProtocol.OutboundWriter as PalaceOutbound
-import qualified FreePalace.Handlers.State          as StateHandlers
-import qualified FreePalace.Net.PalaceProtocol.Connect as Connect
-import qualified FreePalace.Messages.Inbound        as InboundEvents
-import qualified FreePalace.Media.Loader            as MediaLoader
-import qualified FreePalace.Messages                as Messages
-import qualified FreePalace.Net                     as Net
-import qualified FreePalace.State                   as State
+import qualified FreePalace.Net.PalaceProtocol.Connect             as Connect
 
 data GUIEventHandlers = GUIEventHandlers {
   handleUserTextEntry :: IO ()
@@ -112,13 +112,13 @@ speak clientState =
         selectedUser      = Nothing -- TODO - get selected user from ... ?
         textEntryField    = GUI.chatEntry $ State.guiState clientState
     messageText <- GUI.textValue textEntryField
-    
+
     -- TODO check the initial character of the message for instructions
-    let communication = Domain.Communication {
-            Domain.speaker = userId
-          , Domain.target = selectedUser
-          , Domain.message = messageText
-          , Domain.chatMode = Domain.Outbound
+    let communication = Chat.Communication {
+            Chat.speaker = userId
+          , Chat.target = selectedUser
+          , Chat.message = messageText
+          , Chat.chatMode = Chat.Outbound
           }
     Log.debugM "Outgoing.Talk" (show communication)
     case State.protocolState clientState of
@@ -146,10 +146,10 @@ dispatchIncomingMessages clientState =
       Messages.UserNew -> handleNewUserNotification clientState header
       -- End logon sequence
 
-      Messages.Talk -> handleTalk clientState header Domain.TalkAloud
-      Messages.CrossRoomWhisper -> handleTalk clientState header Domain.Whispering
-      Messages.Say -> handleEncodedTalk clientState header Domain.TalkAloud
-      Messages.Whisper -> handleEncodedTalk clientState header Domain.Whispering
+      Messages.Talk -> handleTalk clientState header Chat.TalkAloud
+      Messages.CrossRoomWhisper -> handleTalk clientState header Chat.Whispering
+      Messages.Say -> handleEncodedTalk clientState header Chat.TalkAloud
+      Messages.Whisper -> handleEncodedTalk clientState header Chat.Whispering
       Messages.Move -> handleMovement clientState header
       _ -> handleUnknownMessage clientState header
     Log.debugM "Incoming.Message.Processed" $ "Message processed. New state: " ++ (show newState)
@@ -202,8 +202,8 @@ handleUserLogonNotification clientState header =
     (InboundEvents.InboundUserLogonNotification userRefId palaceUserCount) <- case State.protocolState clientState of
       State.PalaceProtocolState connection messageConverters -> PalaceInbound.readUserLogonNotification connection messageConverters header
     -- TODO Update state
-    let message = "User " ++ (Domain.userName $ userIdFor refIdToUserIdMapping userRefId) ++ " just arrived."
-    GUI.appendMessage (GUI.logWindow gui) $ makeRoomAnnouncement message
+    let message = "User " ++ (User.userName $ User.userIdFor User.refIdToUserIdMapping userRefId) ++ " just arrived."
+    GUI.appendMessage (GUI.logWindow gui) $ Chat.makeRoomAnnouncement message
     Log.debugM  "Incoming.Message.UserLoggedOnAndMax" $  message ++ "  Population: " ++ (show palaceUserCount)
     return clientState
 
@@ -239,7 +239,7 @@ handleRoomDescription clientState header =
         Room.showAvatars = true -- scripting can hide all avatars
         Dispatch room change event for scripting
     -}
-    
+
 handleUserList :: State.Connected -> Messages.Header -> IO State.Connected
 handleUserList clientState header =
   do
@@ -266,13 +266,13 @@ handleNewUserNotification clientState header =
          palaceController.triggerHotspotEvents(IptEventHandler.TYPE_ENTER);
     -}
 
-handleTalk :: State.Connected -> Messages.Header -> Domain.ChatMode -> IO State.Connected
+handleTalk :: State.Connected -> Messages.Header -> Chat.ChatMode -> IO State.Connected
 handleTalk clientState header mode =
   do
     let gui = State.guiState clientState
     chatData <- case State.protocolState clientState of
       State.PalaceProtocolState connection _ -> PalaceInbound.readTalk connection header
-    let communication = communicationFromChatData chatData mode
+    let communication = Chat.fromChatData chatData mode
     Log.debugM "Incoming.Message.UnencryptedTalk" $ show communication
     GUI.appendMessage (GUI.logWindow gui) communication
     -- TODO send talk and user (and message type) to chat balloon in GUI
@@ -281,13 +281,13 @@ handleTalk clientState header mode =
     let newState = clientState
     return newState
 
-handleEncodedTalk :: State.Connected -> Messages.Header -> Domain.ChatMode -> IO State.Connected
+handleEncodedTalk :: State.Connected -> Messages.Header -> Chat.ChatMode -> IO State.Connected
 handleEncodedTalk clientState header mode =
   do
     let gui = State.guiState clientState
     chatData <- case State.protocolState clientState of
       State.PalaceProtocolState connection messageConverters -> PalaceInbound.readEncodedTalk connection messageConverters header
-    let communication = communicationFromChatData chatData mode
+    let communication = Chat.fromChatData chatData mode
     Log.debugM "Incoming.Message.EncryptedTalk" $ show communication
     GUI.appendMessage (GUI.logWindow gui) communication
     -- TODO send talk and user (and message type) to chat balloon in GUI
@@ -315,37 +315,6 @@ handleUnknownMessage clientState header =
     return clientState
 
 
-
-userIdFor :: Map.Map Domain.UserRefId Domain.UserId -> Domain.UserRefId -> Domain.UserId
-userIdFor userMap refId =
-  let defaultUserId = Domain.UserId { Domain.userRef = refId, Domain.userName = "User #" ++ show refId }
-  in Map.findWithDefault defaultUserId refId userMap
-
--- TODO This needs to live in the global state
-refIdToUserIdMapping :: Map.Map Domain.UserRefId Domain.UserId
-refIdToUserIdMapping = Map.fromList [ (0, roomAnnouncementUserId) ]
-
--- TODO Move to State? Or into ref map?
-roomAnnouncementUserId :: Domain.UserId
-roomAnnouncementUserId = Domain.UserId { Domain.userRef = 0, Domain.userName = "Announcement" }
-
-communicationFromChatData :: InboundEvents.InboundChat -> Domain.ChatMode -> Domain.Communication
-communicationFromChatData chatData chatMode =
-  Domain.Communication {
-    Domain.speaker = userIdFor refIdToUserIdMapping $ InboundEvents.chatSpeaker chatData,
-    Domain.target = fmap (userIdFor refIdToUserIdMapping) (InboundEvents.chatRecipient chatData),
-    Domain.message = InboundEvents.chatMessage chatData,
-    Domain.chatMode = chatMode
-  }
-
-makeRoomAnnouncement :: String -> Domain.Communication
-makeRoomAnnouncement message =
-  Domain.Communication {
-    Domain.speaker = roomAnnouncementUserId
-  , Domain.target = Nothing
-  , Domain.message = message
-  , Domain.chatMode = Domain.Announcement
-  }
 
 
 

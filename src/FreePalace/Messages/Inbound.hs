@@ -1,11 +1,13 @@
 module FreePalace.Messages.Inbound where
 
 import           Data.Word
-import qualified FreePalace.Domain as Domain
-import qualified FreePalace.Net as Net
+import qualified FreePalace.Domain.Host as Host
+import qualified FreePalace.Domain.Media as Media
+import qualified FreePalace.Domain.Net as Net
+import qualified FreePalace.Domain.User as User
 
 data InboundHandshake = InboundHandshake {
-    userRefId :: Domain.UserRefId
+    userRefId :: User.UserRefId
   , protocolInfo :: ProtocolInfo
   } deriving Show
 
@@ -32,7 +34,7 @@ data InboundUserStatus = InboundUserStatus UserFlags deriving Show
 type UserFlags = Word16
 
 data InboundUserLogonNotification = InboundUserLogonNotification {
-    whoLoggedOn :: Domain.UserRefId
+    whoLoggedOn :: User.UserRefId
   , palaceUserCount :: PalaceUserCount
   } deriving Show
 type PalaceUserCount = Int
@@ -40,9 +42,9 @@ type PalaceUserCount = Int
 data InboundMediaServerInfo = InboundMediaServerInfo Net.URL deriving Show
 
 data InboundRoomDescription = InboundRoomDescription {
-    roomDescId         :: Domain.RoomId
-  , roomDescName       :: Domain.RoomName
-  , roomDescBackground :: Domain.ImageFilename
+    roomDescId         :: Host.RoomId
+  , roomDescName       :: Host.RoomName
+  , roomDescBackground :: Media.ImageFilename
 } deriving Show
 {- Ultimately RoomDescription should also contain:
    -- overlay images - id, name, transpatency index
@@ -59,10 +61,10 @@ data InboundUserList = InboundUserList deriving Show
 data InboundNewUserNotification = InboundNewUserNotification deriving Show
 
 data InboundChat = InboundChat {
-    chatSpeaker   :: Domain.UserRefId
-  , chatRecipient :: Maybe Domain.UserRefId
+    chatSpeaker   :: User.UserRefId
+  , chatRecipient :: Maybe User.UserRefId
   , chatMessage   :: ChatMessage
   } deriving Show
 type ChatMessage = String
 
-data InboundMovement = InboundMovement { x :: Int, y :: Int, userWhoMoved :: Domain.UserRefId } deriving Show
+data InboundMovement = InboundMovement { x :: Int, y :: Int, userWhoMoved :: User.UserRefId } deriving Show
