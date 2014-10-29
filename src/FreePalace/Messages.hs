@@ -1,11 +1,6 @@
 module FreePalace.Messages where
 
-import           Control.Applicative
-import           Data.Bits
-import           Data.Char
 import qualified Data.Map as Map
-import qualified Data.Text as Text
-import           System.IO
 
 data Header = Header {
   messageType      :: MessageType,
@@ -127,8 +122,8 @@ instance Message MessageType where
     messageTypeId UnknownMessage = 0x00
 
 idToMessageType :: Int -> MessageType
-idToMessageType messageTypeId =
-  Map.findWithDefault UnknownMessage messageTypeId idsToMessageTypes
+idToMessageType msgTypeId =
+  Map.findWithDefault UnknownMessage msgTypeId idsToMessageTypes
     where messageTypes = [(minBound :: MessageType) ..]
           idsToMessageTypes = Map.fromList $ map messageTypeToIdTypePair messageTypes
 
