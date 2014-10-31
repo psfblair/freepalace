@@ -151,13 +151,17 @@ handleRoomDescription clientState roomDescription =
         Dispatch room change event for scripting
     -}
 
+-- List of users in the current room
 handleUserList :: State.Connected -> InboundMessages.UserListing -> IO State.Connected
 handleUserList clientState userList =
   do
     Log.debugM "Incoming.Message.UserList" $ show userList
-    return clientState
+    let newState = State.withRoomUsers clientState userList
+    return newState
     {- OpenPalace does:
-         currentRoom.removeAllUsers();
+         currentRoom.removeAllUsers()
+       and after creating each user:
+         user.loadProps()
     -}
 
 handleNewUserNotification :: State.Connected -> InboundMessages.NewUser -> IO State.Connected

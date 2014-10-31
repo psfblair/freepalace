@@ -305,16 +305,15 @@ handleNoOp clientState noOp =
 loadRoomBackgroundImage :: State.Connected -> IO State.Connected
 loadRoomBackgroundImage state =
   do
-    let mediaServer = State.mediaServer $ State.hostState state
-        roomState = State.currentRoomState . State.hostState $ state
+    let possibleMediaServer = State.mediaServer $ State.hostState state
+        possibleImageName = State.roomBackgroundImageName . State.currentRoomState . State.hostState $ state
         roomCanvas = GUI.roomCanvas $ State.guiState state
-    Log.debugM "Load.BackgroundImage" $ "Media server url: " ++ (show mediaServer)
-    Log.debugM "Load.BackgroundImage" $ "RoomState: " ++ (show roomState)
-    case (mediaServer, roomState) of
-     (Just mediaServerUrl, Just currentRoomState) ->
+    Log.debugM "Load.BackgroundImage" $ "Media server url: " ++ (show possibleMediaServer)
+    Log.debugM "Load.BackgroundImage" $ "Background image: " ++ (show possibleImageName)
+    case (possibleMediaServer, possibleImageName) of
+     (Just mediaServerUrl, Just imageName) ->
        do
-         let imageName = State.roomBackgroundImageName currentRoomState
-             host = State.hostname $ State.hostState state
+         let host = State.hostname $ State.hostState state
              port = State.portId $ State.hostState state
          Log.debugM "Load.BackgroundImage" $ "Fetching background image " ++ imageName ++ " from " ++ (show mediaServerUrl)
          possibleImagePath <- MediaLoader.fetchCachedBackgroundImagePath host port mediaServerUrl imageName

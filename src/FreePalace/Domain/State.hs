@@ -1,5 +1,7 @@
 module FreePalace.Domain.State where
 
+import qualified Data.Map                    as Map
+
 import qualified FreePalace.Domain.Chat      as Chat
 import qualified FreePalace.Domain.GUI       as GUI
 import qualified FreePalace.Domain.Host      as Host
@@ -45,16 +47,16 @@ data HostState = HostState {
   -- TODO , serverVersion :: ServerVersion
   , mediaServer      :: Maybe Network.URI
   , roomList         :: Host.RoomList
-  , userList         :: User.UserList
+  , userMap          :: User.UserMap
   , chatLog          :: Chat.ChatLog
-  , currentRoomState :: Maybe CurrentRoomState
+  , currentRoomState :: CurrentRoomState
   } deriving Show
 
 data CurrentRoomState = CurrentRoomState {
-    roomId                  :: Host.RoomId
-  , roomName                :: Host.RoomName
-  , roomBackgroundImageName :: Media.ImageFilename
-  -- TODO inhabitants ??
+    roomId                  :: Maybe Host.RoomId
+  , roomName                :: Maybe Host.RoomName
+  , roomBackgroundImageName :: Maybe Media.ImageFilename
+  , inhabitants             :: [User.UserId]
   -- TODO overlay images - id, name, transpatency index
   -- TODO hotspots - these come in layers - above avatars, above name tags, above all, above nothing.
            -- Thereb is also a collection of all of them, and a hash of all of them by ID.
@@ -97,11 +99,22 @@ initialHostStateFor hostName portid = HostState {
   , portId = portid
   , mediaServer = Nothing
   , roomList = Host.RoomList
-  , userList = User.UserList
+  , userMap = initialIdToUserIdMapping
   , chatLog = Chat.ChatLog []
-  , currentRoomState = Nothing
+  , currentRoomState = initialRoomState
   }
 
+initialIdToUserIdMapping :: User.UserMap
+initialIdToUserIdMapping = User.UserMap $ Map.fromList [ (0, User.roomAnnouncementUserId) ]
+
+initialRoomState :: CurrentRoomState
+initialRoomState = CurrentRoomState {
+    roomId = Nothing
+  , roomName = Nothing
+  , roomBackgroundImageName = Nothing
+  , inhabitants = []         
+  }
+  
 disconnectedStateFrom :: Connected -> Disconnected
 disconnectedStateFrom priorState =
     let gui = guiState priorState
@@ -136,18 +149,40 @@ withMediaServerInfo currentState (InboundMessages.MediaServerInfo mediaServerUrl
        }
      }
 
--- TODO This may get more complicated if/when the current room state is affected by more than a RoomDescription message
 withRoomDescription :: Connected -> InboundMessages.RoomDescription -> Connected
 withRoomDescription currentState roomDescription =
-  currentState {
+  let oldRoomState = currentRoomState . hostState $ currentState
+  in currentState {
     hostState = (hostState currentState) {
-       currentRoomState = Just CurrentRoomState {
-            roomId = InboundMessages.roomDescId roomDescription
-          , roomName = InboundMessages.roomDescName roomDescription
-          , roomBackgroundImageName = InboundMessages.roomDescBackground roomDescription
+       currentRoomState = oldRoomState {
+            roomId = Just $ InboundMessages.roomDescId roomDescription
+          , roomName = Just $ InboundMessages.roomDescName roomDescription
+          , roomBackgroundImageName = Just $ InboundMessages.roomDescBackground roomDescription
           }
        }
     }
+
+withRoomUsers :: Connected -> InboundMessages.UserListing -> Connected
+withRoomUsers currentState (InboundMessages.UserListing userData) =
+  let roomUserList = map userFrom userData
+      currentUserMap = userMap $ hostState currentState
+      newUserMap = User.addUsers currentUserMap roomUserList
+      oldRoomState = currentRoomState . hostState $ currentState
+  in
+   currentState {
+     hostState = (hostState currentState) {
+          userMap = newUserMap
+        , currentRoomState = oldRoomState { inhabitants = roomUserList }
+     }
+   }
+
+userFrom :: InboundMessages.UserData -> User.UserId
+userFrom InboundMessages.UserData { InboundMessages.userId = ref, InboundMessages.userName = name } =
+  User.UserId {
+      User.userRef = ref
+    , User.userName = name
+  }
+
 
 withMovementData :: Connected -> InboundMessages.MovementNotification -> (Chat.Movement, Connected)
 withMovementData currentState movementData = (Chat.Movement, currentState)

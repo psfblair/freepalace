@@ -89,8 +89,22 @@ data RoomDescription = RoomDescription {
    -- draw commands
 -}
 
-data UserListing = UserListing deriving Show
-
+data UserListing = UserListing [ UserData ] deriving Show
+data UserData = UserData {
+    userId :: User.UserRefId
+  , userName :: User.UserName
+  , userRoomId :: Host.RoomId
+  , userCoordinates :: Coordinates
+  , userFaceInfo :: UserFaceInfo
+  , userPropInfo :: PropInfo
+  } deriving Show
+data Coordinates = CartesianCoordinates { xPos :: Int, yPos :: Int } deriving Show
+data PropInfo = PropInfo { numberOfProps :: Int, props :: [(PropId, PropCrc)] } deriving Show
+type PropId = Int
+type PropCrc = Int
+data UserFaceInfo = UserFaceInfo { userFace :: UserFace, userColor :: UserColor } deriving Show
+type UserFace = Int
+type UserColor = Int
 
 data NewUser = NewUser deriving Show
 

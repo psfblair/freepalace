@@ -39,7 +39,7 @@ readMessage connection messageConverters header =
     PalaceMsgTypes.UserLoggedOnAndMax -> readUserLogonNotification connection messageConverters header
     PalaceMsgTypes.GotHttpServerLocation -> readMediaServerInfo connection header
     PalaceMsgTypes.GotRoomDescription -> readRoomDescription connection messageConverters header
-    PalaceMsgTypes.GotUserList -> readUserList connection header
+    PalaceMsgTypes.GotUserList -> readUserList connection messageConverters header
     PalaceMsgTypes.RoomDescend -> return $ Inbound.NoOpMessage (Inbound.NoOp $ show messageType)
     -- RoomDescend message just means we're done receiving the room description & user list
     PalaceMsgTypes.UserNew -> readNewUserNotification connection header
@@ -205,7 +205,7 @@ readMediaServerInfo connection header =
     url <- Receive.readNullTerminatedTextFromNetwork byteSource $ Inbound.messageSize header
     return . Inbound.MediaServerMessage $ Inbound.MediaServerInfo url
 
- -- room name, background image, overlay images, props, hotspots, draw commands
+-- room name, background image, overlay images, props, hotspots, draw commands
 -- TODO Finish this
 readRoomDescription :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Inbound.Header -> IO Inbound.InboundMessage
 readRoomDescription connection messageConverters header =
@@ -347,14 +347,57 @@ For each draw command -- has a 10-byte header and then a length specified by com
 -}
 
 
--- TODO Finish this
-readUserList :: Net.PalaceConnection -> Inbound.Header -> IO Inbound.InboundMessage
-readUserList connection header =
+-- List of users in the current room
+readUserList :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Inbound.Header -> IO Inbound.InboundMessage
+readUserList connection messageConverters header =
+  do
+    let numberOfUsers = Inbound.messageRefNumber header
+    userList <- sequence $ replicate numberOfUsers (readSingleUser connection messageConverters)
+    return . Inbound.UserListMessage $ Inbound.UserListing userList
+
+readSingleUser :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Inbound.UserData
+readSingleUser connection messageConverters =
   do
     let byteSource = Net.palaceByteSource connection
-    _ <- Receive.readBytesFromNetwork byteSource $ Inbound.messageSize header
-    return $ Inbound.UserListMessage Inbound.UserListing
+        readByte = Receive.readByteFromNetwork byteSource
+        readBytes = Receive.readBytesFromNetwork byteSource
+        readText = Receive.readTextFromNetwork byteSource
+        shortReader = Net.palaceShortReader messageConverters
+        readShort = Receive.readShortFromNetwork shortReader byteSource
+        intReader = Net.palaceIntReader messageConverters
+        readInt = Receive.readIntFromNetwork intReader byteSource
+        
+        toPairs (propId:propCrc:xs) = (propId,propCrc) : toPairs xs
+        toPairs _ = []
+        
+    userId <- readInt
+    y <- fromIntegral <$> readShort
+    x <- fromIntegral <$> readShort
+    propInfos <- sequence $ replicate 18 readInt  -- 9 slots for prop images - pairs of prop ID and propCrc (PalaceProtocol specific?)
+    roomId <- fromIntegral <$> readShort
+    face <- fromIntegral <$> readShort
+    color <- fromIntegral <$> readShort
+    _ <- readShort -- 0?
+    _ <- readShort -- 0?
+    numberOfProps <- fromIntegral <$> readShort
+    userNameLength <- fromIntegral <$> readByte
+    userName <- readText userNameLength
+    _ <- readBytes $ 31 - userNameLength
 
+    let propsList = toPairs propInfos
+        propInfo = Inbound.PropInfo {
+            Inbound.numberOfProps = numberOfProps
+          , Inbound.props = take numberOfProps propsList
+          }
+    return $ Inbound.UserData { 
+        Inbound.userId = userId
+      , Inbound.userName = userName
+      , Inbound.userRoomId = roomId
+      , Inbound.userCoordinates = Inbound.CartesianCoordinates { Inbound.xPos = x, Inbound.yPos = y }
+      , Inbound.userFaceInfo = Inbound.UserFaceInfo { Inbound.userFace = face, Inbound.userColor = color }
+      , Inbound.userPropInfo = propInfo
+      }
+    
 -- TODO Finish this
 readNewUserNotification :: Net.PalaceConnection -> Inbound.Header -> IO Inbound.InboundMessage
 readNewUserNotification connection header =

@@ -16,7 +16,7 @@ readNullTerminatedTextFromNetwork byteSource numberOfCharacters =
     chars <- readTextFromNetwork byteSource numberOfCharacters
     return $ init chars   -- throw away last byte (null terminator)
 
--- Assume Win-1252 characters. OpenPalace seems to let user select UTF-8 as well; not sure how that works.
+-- TODO Take these in as Win-1252 characters. OpenPalace seems to let user select UTF-8 as well; not sure how that works.
 readTextFromNetwork ::  Net.IncomingByteSource -> Int -> IO String
 readTextFromNetwork byteSource numberOfCharacters =
   sequence $ take numberOfCharacters $ repeat $ readCharFromNetwork byteSource
