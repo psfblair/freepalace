@@ -42,7 +42,7 @@ readMessage connection messageConverters header =
     PalaceMsgTypes.GotUserList -> readUserList connection messageConverters header
     PalaceMsgTypes.RoomDescend -> return $ Inbound.NoOpMessage (Inbound.NoOp $ show messageType)
     -- RoomDescend message just means we're done receiving the room description & user list
-    PalaceMsgTypes.UserNew -> readNewUserNotification connection header
+    PalaceMsgTypes.UserNew -> readNewUserNotification connection messageConverters
     -- End logon sequence
 
     PalaceMsgTypes.Talk -> readTalk connection header Inbound.PublicChat
@@ -398,13 +398,12 @@ readSingleUser connection messageConverters =
       , Inbound.userPropInfo = propInfo
       }
     
--- TODO Finish this
-readNewUserNotification :: Net.PalaceConnection -> Inbound.Header -> IO Inbound.InboundMessage
-readNewUserNotification connection header =
+
+readNewUserNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Inbound.InboundMessage
+readNewUserNotification connection messageConverters =
   do
-    let byteSource = Net.palaceByteSource connection
-    _ <- Receive.readBytesFromNetwork byteSource $ Inbound.messageSize header
-    return $ Inbound.NewUserMessage Inbound.NewUser
+    userData <- readSingleUser connection messageConverters
+    return $ Inbound.NewUserMessage userData
 
 
 readTalk :: Net.PalaceConnection -> Inbound.Header -> Inbound.ChatExposure -> IO Inbound.InboundMessage

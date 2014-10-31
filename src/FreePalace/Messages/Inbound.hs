@@ -106,7 +106,8 @@ data UserFaceInfo = UserFaceInfo { userFace :: UserFace, userColor :: UserColor 
 type UserFace = Int
 type UserColor = Int
 
-data NewUser = NewUser deriving Show
+
+type NewUser = UserData
 
 
 data Chat = Chat {

@@ -114,13 +114,9 @@ handleUserStatus clientState userStatus =
     return clientState
 
 handleUserLogonNotification :: State.Connected -> InboundMessages.UserLogonNotification -> IO State.Connected
-handleUserLogonNotification clientState (InboundMessages.UserLogonNotification userRefId palaceUserCount) =
+handleUserLogonNotification clientState logonNotification =
   do
-    let gui = State.guiState clientState
-        message = "User " ++ (User.userName $ State.userIdFor clientState userRefId) ++ " just arrived."
-    -- TODO Update state
-    GUI.appendMessage (GUI.logWindow gui) $ Chat.makeRoomAnnouncement message
-    Log.debugM  "Incoming.Message.UserLogonNotification" $  message ++ "  Population: " ++ (show palaceUserCount)
+    Log.debugM  "Incoming.Message.UserLogonNotification" $ (show logonNotification)
     return clientState
 
 handleMediaServerInfo :: State.Connected -> InboundMessages.MediaServerInfo -> IO State.Connected
@@ -158,18 +154,22 @@ handleUserList clientState userList =
     Log.debugM "Incoming.Message.UserList" $ show userList
     let newState = State.withRoomUsers clientState userList
     return newState
-    {- OpenPalace does:
-         currentRoom.removeAllUsers()
-       and after creating each user:
+    {- OpenPalace - after creating each user:
          user.loadProps()
     -}
 
 handleNewUserNotification :: State.Connected -> InboundMessages.NewUser -> IO State.Connected
 handleNewUserNotification clientState userNotification =
   do
+    let newState = State.withRoomUsers clientState $ InboundMessages.UserListing [userNotification]
+        gui = State.guiState clientState
+        userWhoArrived = InboundMessages.userId userNotification
+        message = "User " ++ (User.userName $ State.userIdFor newState userWhoArrived) ++ " just arrived."
     Log.debugM "Incoming.Message.NewUser" $ show userNotification
-    return clientState
+    GUI.appendMessage (GUI.logWindow gui) $ Chat.makeRoomAnnouncement message
+    return newState
     {- OpenPalace does:
+         Looks in recentLogonUserIds and if it's there removes it.
          PalaceSoundPlayer.getInstance().playConnectionPing();
          And if one's self entered:
          if (needToRunSignonHandlers) {  palaceController.triggerHotspotEvents(IptEventHandler.TYPE_SIGNON);
