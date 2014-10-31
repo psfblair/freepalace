@@ -1,7 +1,7 @@
 module FreePalace.Domain.Chat where
 
 import qualified FreePalace.Domain.User as User
-import qualified FreePalace.Messages.Inbound as InboundEvents
+import qualified FreePalace.Messages.Inbound as Messages
 
 data Communication = Communication {
   speaker  :: User.UserId,
@@ -20,14 +20,20 @@ data ChatLog  = ChatLog {
   } deriving Show
 
 
-fromChatData :: InboundEvents.InboundChat -> ChatMode -> Communication
-fromChatData chatData mode =
-  Communication {
-    speaker = User.userIdFor User.refIdToUserIdMapping $ InboundEvents.chatSpeaker chatData,
-    target = fmap (User.userIdFor User.refIdToUserIdMapping) (InboundEvents.chatRecipient chatData),
-    message = InboundEvents.chatMessage chatData,
-    chatMode = mode
-  }
+fromChatData :: Messages.Chat -> Communication
+fromChatData Messages.Chat {   Messages.chatSpeaker = spkr
+                             , Messages.chatRecipient = recvr
+                             , Messages.chatMessage = msg
+                             , Messages.chatExposure = exposure } =
+  let mode = case exposure of
+        Messages.PublicChat -> TalkAloud
+        Messages.PrivateChat -> Whispering
+  in Communication {
+      speaker = User.userIdFor User.refIdToUserIdMapping spkr
+    , target = fmap (User.userIdFor User.refIdToUserIdMapping) recvr
+    , message = msg
+    , chatMode = mode
+    }
 
 makeRoomAnnouncement :: String -> Communication
 makeRoomAnnouncement announcement =

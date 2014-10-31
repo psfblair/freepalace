@@ -7,7 +7,7 @@ import           Data.Word
 
 import qualified FreePalace.Domain.Chat                       as Chat
 import qualified FreePalace.Domain.User                       as User
-import qualified FreePalace.Messages                          as Messages
+import qualified FreePalace.Messages.PalaceProtocol.MessageTypes  as Messages
 import qualified FreePalace.Messages.PalaceProtocol.Obfuscate as Obfuscate
 import qualified FreePalace.Net.Send                          as Send
 import           FreePalace.Net.Utils

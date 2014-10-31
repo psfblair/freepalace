@@ -5,44 +5,76 @@ import qualified FreePalace.Domain.Host as Host
 import qualified FreePalace.Domain.Media as Media
 import qualified FreePalace.Domain.Net as Net
 import qualified FreePalace.Domain.User as User
+import qualified FreePalace.Messages.PalaceProtocol.MessageTypes as PalaceMessages
+-- TODO Would be nice not to have PalaceProtocol references in here
 
-data InboundHandshake = InboundHandshake {
+data Header = PalaceHeader {
+    messageType      :: PalaceMessages.MessageType
+  , messageSize      :: Int
+  , messageRefNumber :: Int
+} deriving Show
+
+
+data InboundMessage = 
+    HandshakeMessage Handshake
+  | LogonReplyMessage LogonReply
+  | ServerVersionMessage ServerVersion
+  | ServerInfoMessage ServerInfoNotification
+  | UserStatusMessage UserStatusNotification
+  | UserLogonMessage UserLogonNotification    
+  | MediaServerMessage MediaServerInfo
+  | RoomDescriptionMessage RoomDescription
+  | UserListMessage UserListing
+  | NoOpMessage NoOp
+  | NewUserMessage NewUser
+  | ChatMessage Chat
+  | MovementMessage MovementNotification
+
+
+data Handshake = Handshake {
     userRefId :: User.UserRefId
   , protocolInfo :: ProtocolInfo
   } deriving Show
-
--- TODO Would be nice not to have a PalaceProtocol reference in here
-data ProtocolInfo = PalaceProtocol Net.PalaceConnection Endianness
+data  ProtocolInfo = PalaceProtocol Net.PalaceConnection Endianness
 instance Show ProtocolInfo where
   show (PalaceProtocol _ _) = "Palace Protocol"
-data Endianness = BigEndian | LittleEndian deriving Show
+data  Endianness = BigEndian | LittleEndian deriving Show
 
-data InboundLogonReply = InboundLogonReply {
+
+data LogonReply = LogonReply {
     puidCounter :: PuidCounter
   , puidCrc :: PuidCrc
   } deriving Show
 type PuidCounter = Int
 type PuidCrc = Int
 
-data InboundServerInfo = InboundServerInfo {
+
+newtype ServerVersion = ServerVersion Int deriving Show
+
+
+data ServerInfoNotification = ServerInfoNotification {
     serverName :: ServerName
   , serverPermissions :: ServerPermissions
   } deriving Show
 type ServerName = String
 type ServerPermissions = Int
 
-data InboundUserStatus = InboundUserStatus UserFlags deriving Show
+
+newtype UserStatusNotification = UserStatusNotification UserFlags deriving Show
 type UserFlags = Word16
 
-data InboundUserLogonNotification = InboundUserLogonNotification {
+
+data UserLogonNotification = UserLogonNotification {
     whoLoggedOn :: User.UserRefId
   , palaceUserCount :: PalaceUserCount
   } deriving Show
 type PalaceUserCount = Int
 
-data InboundMediaServerInfo = InboundMediaServerInfo Net.URL deriving Show
 
-data InboundRoomDescription = InboundRoomDescription {
+newtype MediaServerInfo = MediaServerInfo Net.URL deriving Show
+
+
+data RoomDescription = RoomDescription {
     roomDescId         :: Host.RoomId
   , roomDescName       :: Host.RoomName
   , roomDescBackground :: Media.ImageFilename
@@ -57,15 +89,24 @@ data InboundRoomDescription = InboundRoomDescription {
    -- draw commands
 -}
 
-data InboundUserList = InboundUserList deriving Show
+data UserListing = UserListing deriving Show
 
-data InboundNewUserNotification = InboundNewUserNotification deriving Show
 
-data InboundChat = InboundChat {
+data NewUser = NewUser deriving Show
+
+
+data Chat = Chat {
     chatSpeaker   :: User.UserRefId
   , chatRecipient :: Maybe User.UserRefId
   , chatMessage   :: ChatMessage
+  , chatExposure  :: ChatExposure
   } deriving Show
 type ChatMessage = String
+data ChatExposure = PublicChat | PrivateChat deriving Show
 
-data InboundMovement = InboundMovement { x :: Int, y :: Int, userWhoMoved :: User.UserRefId } deriving Show
+
+data MovementNotification = MovementNotification { x :: Int, y :: Int, userWhoMoved :: User.UserRefId } deriving Show
+
+
+newtype NoOp = NoOp String deriving Show
+

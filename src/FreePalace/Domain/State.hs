@@ -1,13 +1,13 @@
 module FreePalace.Domain.State where
 
-import qualified FreePalace.Domain.Chat  as Chat
-import qualified FreePalace.Domain.GUI   as GUI
-import qualified FreePalace.Domain.Host  as Host
-import qualified FreePalace.Domain.Media as Media
-import qualified FreePalace.Domain.Net   as Net
-import qualified FreePalace.Domain.User  as User
-import qualified FreePalace.Messages.Inbound as Events
-import qualified Network.URI             as Network
+import qualified FreePalace.Domain.Chat      as Chat
+import qualified FreePalace.Domain.GUI       as GUI
+import qualified FreePalace.Domain.Host      as Host
+import qualified FreePalace.Domain.Media     as Media
+import qualified FreePalace.Domain.Net       as Net
+import qualified FreePalace.Domain.User      as User
+import qualified FreePalace.Messages.Inbound as InboundMessages
+import qualified Network.URI                 as Network
 
 data ClientState =
     DisconnectedState Disconnected
@@ -125,8 +125,8 @@ withUserRefId currentState refId =
 withProtocol :: Connected -> ProtocolState -> Connected
 withProtocol currentState updatedProtocol = currentState { protocolState = updatedProtocol }
 
-withMediaServerInfo :: Connected -> Events.InboundMediaServerInfo -> Connected
-withMediaServerInfo currentState (Events.InboundMediaServerInfo mediaServerUrl) =
+withMediaServerInfo :: Connected -> InboundMessages.MediaServerInfo -> Connected
+withMediaServerInfo currentState (InboundMessages.MediaServerInfo mediaServerUrl) =
   case Network.parseURI mediaServerUrl of
    Nothing -> currentState  -- If we can't parse it, we just won't update.
    Just uri ->
@@ -137,17 +137,17 @@ withMediaServerInfo currentState (Events.InboundMediaServerInfo mediaServerUrl) 
      }
 
 -- TODO This may get more complicated if/when the current room state is affected by more than a RoomDescription message
-withRoomDescription :: Connected -> Events.InboundRoomDescription -> Connected
+withRoomDescription :: Connected -> InboundMessages.RoomDescription -> Connected
 withRoomDescription currentState roomDescription =
   currentState {
     hostState = (hostState currentState) {
        currentRoomState = Just CurrentRoomState {
-            roomId = Events.roomDescId roomDescription
-          , roomName = Events.roomDescName roomDescription
-          , roomBackgroundImageName = Events.roomDescBackground roomDescription
+            roomId = InboundMessages.roomDescId roomDescription
+          , roomName = InboundMessages.roomDescName roomDescription
+          , roomBackgroundImageName = InboundMessages.roomDescBackground roomDescription
           }
        }
     }
 
-withMovementData :: Connected -> Events.InboundMovement -> (Chat.Movement, Connected)
+withMovementData :: Connected -> InboundMessages.MovementNotification -> (Chat.Movement, Connected)
 withMovementData currentState movementData = (Chat.Movement, currentState)

@@ -1,12 +1,6 @@
-module FreePalace.Messages where
+module FreePalace.Messages.PalaceProtocol.MessageTypes where
 
 import qualified Data.Map as Map
-
-data Header = Header {
-  messageType      :: MessageType,
-  messageSize      :: Int,
-  messageRefNumber :: Int
-} deriving Show
 
 class Message msgType where
   messageTypeId :: msgType -> Int
