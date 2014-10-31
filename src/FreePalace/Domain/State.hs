@@ -165,7 +165,7 @@ withRoomDescription currentState roomDescription =
 withRoomUsers :: Connected -> InboundMessages.UserListing -> Connected
 withRoomUsers currentState (InboundMessages.UserListing userData) =
   let roomUserList = map userFrom userData
-      currentUserMap = userMap $ hostState currentState
+      currentUserMap = userMap . hostState $ currentState
       newUserMap = User.addUsers currentUserMap roomUserList
       oldRoomState = currentRoomState . hostState $ currentState
   in
@@ -183,6 +183,27 @@ userFrom InboundMessages.UserData { InboundMessages.userId = ref, InboundMessage
     , User.userName = name
   }
 
+userIdFor :: Connected -> User.UserRefId -> User.UserId
+userIdFor currentState refId =
+  let defaultUserId = User.UserId { User.userRef = refId, User.userName = "User #" ++ show refId }
+      User.UserMap refIdsToUsers = userMap . hostState $ currentState
+  in Map.findWithDefault defaultUserId refId refIdsToUsers
+
+
+communicationFromChatData :: Connected -> InboundMessages.Chat -> Chat.Communication
+communicationFromChatData currentState InboundMessages.Chat { InboundMessages.chatSpeaker = spkr
+                                                            , InboundMessages.chatRecipient = recvr
+                                                            , InboundMessages.chatMessage = msg
+                                                            , InboundMessages.chatExposure = exposure } =
+  let mode = case exposure of
+        InboundMessages.PublicChat -> Chat.TalkAloud
+        InboundMessages.PrivateChat -> Chat.Whispering
+  in Chat.Communication {
+      Chat.speaker = userIdFor currentState spkr
+    , Chat.target = fmap (userIdFor currentState) recvr
+    , Chat.message = msg
+    , Chat.chatMode = mode
+    }
 
 withMovementData :: Connected -> InboundMessages.MovementNotification -> (Chat.Movement, Connected)
 withMovementData currentState movementData = (Chat.Movement, currentState)

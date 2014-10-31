@@ -21,20 +21,11 @@ data UserId = UserId { userRef :: UserRefId, userName :: UserName } deriving Sho
 
 newtype UserMap = UserMap (Map.Map UserRefId UserId) deriving Show
 
-userIdFor :: Map.Map UserRefId UserId -> UserRefId -> UserId
-userIdFor userMap refId =
-  let defaultUserId = UserId { userRef = refId, userName = "User #" ++ show refId }
-  in Map.findWithDefault defaultUserId refId userMap
-
 addUsers :: UserMap -> [UserId] -> UserMap
 addUsers (UserMap userMap) additionalUsers =
   let addToUserMap = \accum user -> Map.insert (userRef user) user accum
       newMap = Prelude.foldl addToUserMap userMap additionalUsers
   in UserMap newMap
-
--- TODO This needs to live in the global state
-refIdToUserIdMapping :: Map.Map UserRefId UserId
-refIdToUserIdMapping = Map.fromList [ (0, roomAnnouncementUserId) ]
 
 -- TODO Move to State? Or into ref map?
 roomAnnouncementUserId :: UserId

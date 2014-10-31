@@ -19,22 +19,6 @@ data ChatLog  = ChatLog {
   logEntries :: [ Communication ]
   } deriving Show
 
-
-fromChatData :: Messages.Chat -> Communication
-fromChatData Messages.Chat {   Messages.chatSpeaker = spkr
-                             , Messages.chatRecipient = recvr
-                             , Messages.chatMessage = msg
-                             , Messages.chatExposure = exposure } =
-  let mode = case exposure of
-        Messages.PublicChat -> TalkAloud
-        Messages.PrivateChat -> Whispering
-  in Communication {
-      speaker = User.userIdFor User.refIdToUserIdMapping spkr
-    , target = fmap (User.userIdFor User.refIdToUserIdMapping) recvr
-    , message = msg
-    , chatMode = mode
-    }
-
 makeRoomAnnouncement :: String -> Communication
 makeRoomAnnouncement announcement =
   Communication {

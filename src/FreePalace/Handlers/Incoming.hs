@@ -117,7 +117,7 @@ handleUserLogonNotification :: State.Connected -> InboundMessages.UserLogonNotif
 handleUserLogonNotification clientState (InboundMessages.UserLogonNotification userRefId palaceUserCount) =
   do
     let gui = State.guiState clientState
-    let message = "User " ++ (User.userName $ User.userIdFor User.refIdToUserIdMapping userRefId) ++ " just arrived."
+        message = "User " ++ (User.userName $ State.userIdFor clientState userRefId) ++ " just arrived."
     -- TODO Update state
     GUI.appendMessage (GUI.logWindow gui) $ Chat.makeRoomAnnouncement message
     Log.debugM  "Incoming.Message.UserLogonNotification" $  message ++ "  Population: " ++ (show palaceUserCount)
@@ -181,7 +181,7 @@ handleChat :: State.Connected -> InboundMessages.Chat -> IO State.Connected
 handleChat clientState chatData =
   do
     let gui = State.guiState clientState
-    let communication = Chat.fromChatData chatData
+        communication = State.communicationFromChatData clientState chatData
     Log.debugM "Incoming.Message.Chat" $ show communication
     GUI.appendMessage (GUI.logWindow gui) communication
     -- TODO send talk and user (and message type) to chat balloon in GUI
@@ -211,16 +211,15 @@ handleNoOp clientState noOp =
 loadRoomBackgroundImage :: State.Connected -> IO State.Connected
 loadRoomBackgroundImage state =
   do
-    let mediaServer = State.mediaServer $ State.hostState state
-        roomState = State.currentRoomState . State.hostState $ state
+    let possibleMediaServer = State.mediaServer $ State.hostState state
+        possibleImageName = State.roomBackgroundImageName . State.currentRoomState . State.hostState $ state
         roomCanvas = GUI.roomCanvas $ State.guiState state
-    Log.debugM "Load.BackgroundImage" $ "Media server url: " ++ (show mediaServer)
-    Log.debugM "Load.BackgroundImage" $ "RoomState: " ++ (show roomState)
-    case (mediaServer, roomState) of
-     (Just mediaServerUrl, Just currentRoomState) ->
+    Log.debugM "Load.BackgroundImage" $ "Media server url: " ++ (show possibleMediaServer)
+    Log.debugM "Load.BackgroundImage" $ "Background image: " ++ (show possibleImageName)
+    case (possibleMediaServer, possibleImageName) of
+     (Just mediaServerUrl, Just imageName) ->
        do
-         let imageName = State.roomBackgroundImageName currentRoomState
-             host = State.hostname $ State.hostState state
+         let host = State.hostname $ State.hostState state
              port = State.portId $ State.hostState state
          Log.debugM "Load.BackgroundImage" $ "Fetching background image " ++ imageName ++ " from " ++ (show mediaServerUrl)
          possibleImagePath <- MediaLoader.fetchCachedBackgroundImagePath host port mediaServerUrl imageName
