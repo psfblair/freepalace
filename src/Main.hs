@@ -3,14 +3,14 @@ module Main where
 import           Network
 import           System.Log.Logger
 
-import qualified FreePalace.Domain.Host    as Host
-import qualified FreePalace.Domain.Net     as Net
-import qualified FreePalace.Domain.State   as State
-import qualified FreePalace.GUI            as GUI
-import qualified FreePalace.GUI.Gtk        as Gtk
-import qualified FreePalace.Handlers       as Handlers
+import qualified FreePalace.Domain.Host       as Host
+import qualified FreePalace.Domain.Net        as Net
+import qualified FreePalace.Domain.State      as State
+import qualified FreePalace.GUI               as GUI
+import qualified FreePalace.GUI.Gtk           as Gtk
+import qualified FreePalace.Handlers.Outgoing as GuiHandlers
 
-import           Paths_freepalace          (getDataFileName)
+import           Paths_freepalace             (getDataFileName)
 
 main :: IO ()
 main = withSocketsDo $ do -- TODO abstract out withSocketsDo?
@@ -18,7 +18,7 @@ main = withSocketsDo $ do -- TODO abstract out withSocketsDo?
   guiDataFileName <- getDataFileName "freepalace.resources.glade"
   guiComponents <- Gtk.init guiDataFileName
   let initialState = State.DisconnectedState (State.Disconnected guiComponents Host.HostDirectory State.defaultSettings) -- TODO configs from config file
-      connectionRequestHandler = Handlers.handleConnectRequested initialState Net.PalaceProtocol
+      connectionRequestHandler = GuiHandlers.handleConnectRequested initialState Net.PalaceProtocol
   GUI.initializeGUI guiComponents connectionRequestHandler
   Gtk.start
 
