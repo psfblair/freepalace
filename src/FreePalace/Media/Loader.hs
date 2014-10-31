@@ -15,7 +15,6 @@ import           System.Log.Logger     as Log
 
 import qualified FreePalace.Domain.Net as Net
 
--- Cache directory may start with ~
 fetchCachedBackgroundImagePath :: Net.Hostname -> Net.PortId -> Network.URI -> Path.FilePath -> IO (Maybe Path.FilePath)
 fetchCachedBackgroundImagePath host port mediaServerUrl imageName
   | isSuffixOf ".gif" imageName = (join . find isJust) <$> mapM (findCachedMedia host port mediaServerUrl) [ pngFile, jpegFile, gifFile ]

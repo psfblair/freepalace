@@ -203,6 +203,7 @@ handleNoOp clientState noOp =
 
 
 -- TODO Do we want to reload this every time a new room description gets sent? How often does that happen?
+-- TODO This should happen on a separate thread.
 loadRoomBackgroundImage :: State.Connected -> IO State.Connected
 loadRoomBackgroundImage state =
   do

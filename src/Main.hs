@@ -6,7 +6,7 @@ import           System.Log.Logger
 import qualified FreePalace.Domain.Host       as Host
 import qualified FreePalace.Domain.Net        as Net
 import qualified FreePalace.Domain.State      as State
-import qualified FreePalace.GUI               as GUI
+import qualified FreePalace.GUI.Initialize    as GUI
 import qualified FreePalace.GUI.Gtk           as Gtk
 import qualified FreePalace.Handlers.Outgoing as GuiHandlers
 

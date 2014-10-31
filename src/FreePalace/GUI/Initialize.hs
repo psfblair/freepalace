@@ -1,4 +1,4 @@
-module FreePalace.GUI where
+module FreePalace.GUI.Initialize where
 
 import           FreePalace.Domain.GUI
 import qualified FreePalace.Domain.Net as Net

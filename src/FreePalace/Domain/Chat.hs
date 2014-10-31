@@ -10,7 +10,7 @@ data Communication = Communication {
   chatMode :: ChatMode
 } deriving Show
 
-data ChatMode = TalkAloud | Whispering | Thought | Exclamation | Announcement | Outbound deriving Show
+data ChatMode = TalkAloud | Whispering | Thought | Exclamation | Notice | Announcement | Outbound deriving Show
 
 data Movement = Movement
 
