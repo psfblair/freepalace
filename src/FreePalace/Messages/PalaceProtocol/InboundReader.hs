@@ -42,7 +42,7 @@ readMessage connection messageConverters header =
     PalaceMsgTypes.GotUserList -> readUserList connection messageConverters header
     PalaceMsgTypes.RoomDescend -> return $ Inbound.NoOpMessage (Inbound.NoOp $ show messageType)
     -- RoomDescend message just means we're done receiving the room description & user list
-    PalaceMsgTypes.UserNew -> readNewUserNotification connection messageConverters
+    PalaceMsgTypes.UserNew -> readUserEnteredRoomNotification connection messageConverters
     -- End logon sequence
 
     PalaceMsgTypes.Talk -> readTalk connection header Inbound.PublicChat
@@ -50,6 +50,9 @@ readMessage connection messageConverters header =
     PalaceMsgTypes.Say -> readEncodedTalk connection messageConverters header Inbound.PublicChat
     PalaceMsgTypes.Whisper -> readEncodedTalk connection messageConverters header Inbound.PrivateChat
     PalaceMsgTypes.Move -> readMovement connection messageConverters header
+
+    PalaceMsgTypes.UserExitRoom -> readUserExitedRoomNotification connection header
+    PalaceMsgTypes.UserLeaving -> readUserDisconnectedNotification connection messageConverters header
 
     PalaceMsgTypes.Superuser -> readUnknownMessage connection header
     PalaceMsgTypes.SusrMsg -> readUnknownMessage connection header
@@ -74,8 +77,6 @@ readMessage connection messageConverters header =
     PalaceMsgTypes.UserColor -> readUnknownMessage connection header
     PalaceMsgTypes.UserFace -> readUnknownMessage connection header
     PalaceMsgTypes.UserProp -> readUnknownMessage connection header
-    PalaceMsgTypes.UserExitRoom -> readUnknownMessage connection header
-    PalaceMsgTypes.UserLeaving -> readUnknownMessage connection header
     PalaceMsgTypes.GotoRoom -> readUnknownMessage connection header
     PalaceMsgTypes.Blowthru -> readUnknownMessage connection header
     PalaceMsgTypes.NavError -> readUnknownMessage connection header
@@ -397,14 +398,27 @@ readSingleUser connection messageConverters =
       , Inbound.userFaceInfo = Inbound.UserFaceInfo { Inbound.userFace = face, Inbound.userColor = color }
       , Inbound.userPropInfo = propInfo
       }
-    
 
-readNewUserNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Inbound.InboundMessage
-readNewUserNotification connection messageConverters =
+readUserEnteredRoomNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Inbound.InboundMessage
+readUserEnteredRoomNotification connection messageConverters =
   do
     userData <- readSingleUser connection messageConverters
-    return $ Inbound.NewUserMessage userData
+    return $ Inbound.UserEnteredRoomMessage userData
 
+readUserExitedRoomNotification :: Net.PalaceConnection -> Inbound.Header -> IO Inbound.InboundMessage
+readUserExitedRoomNotification connection header =
+   do
+    let userId = Inbound.messageRefNumber header
+    return . Inbound.UserExitedRoomMessage $ Inbound.UserExitedRoom userId
+
+readUserDisconnectedNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Inbound.Header -> IO Inbound.InboundMessage
+readUserDisconnectedNotification connection messageConverters header =
+  do
+    let byteSource = Net.palaceByteSource connection
+        intReader = Net.palaceIntReader messageConverters
+        readInt = Receive.readIntFromNetwork intReader byteSource
+    population <- readInt
+    return . Inbound.UserDisconnectedMessage $ Inbound.UserDisconnected population (Inbound.messageRefNumber header)
 
 readTalk :: Net.PalaceConnection -> Inbound.Header -> Inbound.ChatExposure -> IO Inbound.InboundMessage
 readTalk connection header exposure =

@@ -64,7 +64,9 @@ handleInboundEvent clientState (InboundMessages.UserLogonMessage userLogonNotifi
 handleInboundEvent clientState (InboundMessages.MediaServerMessage mediaServerInfo) = handleMediaServerInfo clientState mediaServerInfo
 handleInboundEvent clientState (InboundMessages.RoomDescriptionMessage roomDescription) = handleRoomDescription clientState roomDescription
 handleInboundEvent clientState (InboundMessages.UserListMessage userListing) = handleUserList clientState userListing
-handleInboundEvent clientState (InboundMessages.NewUserMessage newUserNotification) = handleNewUserNotification clientState newUserNotification
+handleInboundEvent clientState (InboundMessages.UserEnteredRoomMessage userEnteredRoom) = handleUserEnteredRoom clientState userEnteredRoom
+handleInboundEvent clientState (InboundMessages.UserExitedRoomMessage userExitedRoom) = handleUserExitedRoom clientState userExitedRoom
+handleInboundEvent clientState (InboundMessages.UserDisconnectedMessage userDisconnected) = handleUserDisconnected clientState userDisconnected
 handleInboundEvent clientState (InboundMessages.ChatMessage chat) = handleChat clientState chat
 handleInboundEvent clientState (InboundMessages.MovementMessage movementNotification) = handleMovement clientState movementNotification
 handleInboundEvent clientState (InboundMessages.NoOpMessage noOp) = handleNoOp clientState noOp
@@ -113,11 +115,16 @@ handleUserStatus clientState userStatus =
     Log.debugM "Incoming.Message.UserStatus" $ "User status -- User flags: " ++ (show userStatus)
     return clientState
 
+-- A user connects to this host
 handleUserLogonNotification :: State.Connected -> InboundMessages.UserLogonNotification -> IO State.Connected
 handleUserLogonNotification clientState logonNotification =
   do
     Log.debugM  "Incoming.Message.UserLogonNotification" $ (show logonNotification)
     return clientState
+    {- OpenPalace does:
+         Adds the user ID to  recentLogonUserIds; sets a timer to remove it in 15 seconds.
+         This is for the Ping sound managed by the NewUserNotification.
+    -}
 
 handleMediaServerInfo :: State.Connected -> InboundMessages.MediaServerInfo -> IO State.Connected
 handleMediaServerInfo clientState serverInfo =
@@ -158,23 +165,50 @@ handleUserList clientState userList =
          user.loadProps()
     -}
 
-handleNewUserNotification :: State.Connected -> InboundMessages.NewUser -> IO State.Connected
-handleNewUserNotification clientState userNotification =
+handleUserEnteredRoom :: State.Connected -> InboundMessages.UserEnteredRoom -> IO State.Connected
+handleUserEnteredRoom clientState userNotification =
   do
     let newState = State.withRoomUsers clientState $ InboundMessages.UserListing [userNotification]
         gui = State.guiState clientState
         userWhoArrived = InboundMessages.userId userNotification
-        message = "User " ++ (User.userName $ State.userIdFor newState userWhoArrived) ++ " just arrived."
+        message = (User.userName $ State.userIdFor newState userWhoArrived) ++ " entered the room."
     Log.debugM "Incoming.Message.NewUser" $ show userNotification
     GUI.appendMessage (GUI.logWindow gui) $ Chat.makeRoomAnnouncement message
     return newState
     {- OpenPalace does:
-         Looks in recentLogonUserIds and if it's there removes it.
-         PalaceSoundPlayer.getInstance().playConnectionPing();
+         Looks for this user in recentLogonIds (set in UserLogonNotification) - to see if the user has entered the palace within the last 15 sec.
+         If so, remove it from the recentLogonIds and play the connection Ping:
+            PalaceSoundPlayer.getInstance().playConnectionPing();
+         If someone else entered and they were selected in the user list, they are selected (for whisper) in the room too.
          And if one's self entered:
-         if (needToRunSignonHandlers) {  palaceController.triggerHotspotEvents(IptEventHandler.TYPE_SIGNON);
-					 needToRunSignonHandlers = false; }
-         palaceController.triggerHotspotEvents(IptEventHandler.TYPE_ENTER);
+            if (needToRunSignonHandlers) {  -- This flag is set to true when you first log on
+                requestRoomList();
+                requestUserList();
+                palaceController.triggerHotspotEvents(IptEventHandler.TYPE_SIGNON);
+			    needToRunSignonHandlers = false; }
+            palaceController.triggerHotspotEvents(IptEventHandler.TYPE_ENTER);
+    -}
+
+handleUserExitedRoom :: State.Connected -> InboundMessages.UserExitedRoom -> IO State.Connected
+handleUserExitedRoom clientState exitNotification@(InboundMessages.UserExitedRoom userWhoLeft) =
+  do
+    let
+        message = (User.userName $ State.userIdFor clientState userWhoLeft) ++ " left the room."
+        gui = State.guiState clientState
+        newState = State.withUserLeavingRoom clientState userWhoLeft
+    Log.debugM "Incoming.Message.NewUser" $ show exitNotification
+    GUI.appendMessage (GUI.logWindow gui) $ Chat.makeRoomAnnouncement message
+    return newState
+
+handleUserDisconnected :: State.Connected -> InboundMessages.UserDisconnected -> IO State.Connected
+handleUserDisconnected clientState disconnectedNotification@(InboundMessages.UserDisconnected userWhoLeft population) =
+  do
+    let newState = State.withUserDisconnecting clientState userWhoLeft population
+    Log.debugM "Incoming.Message.NewUser" $ show disconnectedNotification
+    return newState
+    {- OpenPalace does:
+        If user is in the room, PalaceSoundPlayer.getInstance().playConnectionPing()
+        If that user was the selected user for whisper (in the room or not), unset the selected user
     -}
 
 handleChat :: State.Connected -> InboundMessages.Chat -> IO State.Connected

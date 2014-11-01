@@ -176,6 +176,30 @@ withRoomUsers currentState (InboundMessages.UserListing userData) =
      }
    }
 
+withUserLeavingRoom :: Connected -> User.UserRefId -> Connected
+withUserLeavingRoom currentState refIdOfUserWhoLeft =
+    let currentInhabitants = inhabitants . currentRoomState . hostState $ currentState
+        newInhabitants = filter (\userId -> User.userRef userId /= refIdOfUserWhoLeft) currentInhabitants
+    in
+     currentState {
+       hostState = (hostState currentState) {
+          currentRoomState = (currentRoomState . hostState $ currentState) { inhabitants = newInhabitants }
+       }
+     }
+
+-- TODO Keep track of user count
+withUserDisconnecting :: Connected -> User.UserRefId -> InboundMessages.PalaceUserCount -> Connected
+withUserDisconnecting currentState refIdOfUserWhoDisconnected population =
+    let stateWithUserNoLongerInRoom = withUserLeavingRoom currentState refIdOfUserWhoDisconnected
+        User.UserMap currentUserMap = userMap . hostState $ stateWithUserNoLongerInRoom
+        newUserMap = Map.delete refIdOfUserWhoDisconnected currentUserMap
+    in
+     stateWithUserNoLongerInRoom {
+       hostState = (hostState stateWithUserNoLongerInRoom) {
+          userMap = User.UserMap newUserMap
+       }
+     }
+
 userFrom :: InboundMessages.UserData -> User.UserId
 userFrom InboundMessages.UserData { InboundMessages.userId = ref, InboundMessages.userName = name } =
   User.UserId {

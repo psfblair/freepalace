@@ -26,7 +26,9 @@ data InboundMessage =
   | RoomDescriptionMessage RoomDescription
   | UserListMessage UserListing
   | NoOpMessage NoOp
-  | NewUserMessage NewUser
+  | UserEnteredRoomMessage UserEnteredRoom
+  | UserExitedRoomMessage UserExitedRoom
+  | UserDisconnectedMessage UserDisconnected
   | ChatMessage Chat
   | MovementMessage MovementNotification
 
@@ -64,10 +66,7 @@ newtype UserStatusNotification = UserStatusNotification UserFlags deriving Show
 type UserFlags = Word16
 
 
-data UserLogonNotification = UserLogonNotification {
-    whoLoggedOn :: User.UserRefId
-  , palaceUserCount :: PalaceUserCount
-  } deriving Show
+data UserLogonNotification = UserLogonNotification User.UserRefId PalaceUserCount deriving Show
 type PalaceUserCount = Int
 
 
@@ -107,7 +106,11 @@ type UserFace = Int
 type UserColor = Int
 
 
-type NewUser = UserData
+type UserEnteredRoom = UserData
+
+newtype UserExitedRoom = UserExitedRoom User.UserRefId deriving Show
+
+data UserDisconnected = UserDisconnected User.UserRefId PalaceUserCount deriving Show
 
 
 data Chat = Chat {
