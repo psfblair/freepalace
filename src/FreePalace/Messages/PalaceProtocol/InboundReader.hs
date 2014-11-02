@@ -3,6 +3,7 @@ module FreePalace.Messages.PalaceProtocol.InboundReader where
 import           Control.Applicative
 import           Control.Exception
 import qualified Data.Convertible.Base                           as Convert
+import           Data.Word
 
 import qualified FreePalace.Domain.Net                           as Net
 import qualified FreePalace.Messages.Inbound                     as Inbound
@@ -28,84 +29,92 @@ readHeader connection messageConverters =
 readMessage :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Inbound.Header -> IO Inbound.InboundMessage
 readMessage connection messageConverters header =
   let messageType = Inbound.messageType header
+      byteSource = Net.palaceByteSource connection
+      readByte = Receive.readByteFromNetwork byteSource
+      readBytes = Receive.readBytesFromNetwork byteSource
+      readShort = Receive.readShortFromNetwork (Net.palaceShortReader messageConverters) byteSource
+      readInt = Receive.readIntFromNetwork (Net.palaceIntReader messageConverters) byteSource
+      readText = Receive.readTextFromNetwork byteSource
+      readNullTerminatedText = Receive.readNullTerminatedTextFromNetwork byteSource
+      
   in case messageType of
     PalaceMsgTypes.BigEndianServer    -> readHandshake PalaceMsgTypes.BigEndianServer connection header
     PalaceMsgTypes.LittleEndianServer -> readHandshake PalaceMsgTypes.LittleEndianServer connection header
     PalaceMsgTypes.UnknownServer      -> readHandshake PalaceMsgTypes.UnknownServer connection header
-    PalaceMsgTypes.AlternateLogonReply -> readAlternateLogonReply connection messageConverters
+    PalaceMsgTypes.AlternateLogonReply -> readAlternateLogonReply readByte readShort readInt readText
     PalaceMsgTypes.ServerVersion -> readServerVersion header
-    PalaceMsgTypes.ServerInfo -> readServerInfo connection messageConverters
-    PalaceMsgTypes.UserStatus -> readUserStatus connection messageConverters header
-    PalaceMsgTypes.UserLoggedOnAndMax -> readUserLogonNotification connection messageConverters header
-    PalaceMsgTypes.GotHttpServerLocation -> readMediaServerInfo connection header
-    PalaceMsgTypes.GotRoomDescription -> readRoomDescription connection messageConverters header
-    PalaceMsgTypes.GotUserList -> readUserList connection messageConverters header
+    PalaceMsgTypes.ServerInfo -> readServerInfo readByte readInt readText
+    PalaceMsgTypes.UserStatus -> readUserStatus readBytes readShort header
+    PalaceMsgTypes.UserLoggedOnAndMax -> readUserLogonNotification readInt header
+    PalaceMsgTypes.GotHttpServerLocation -> readMediaServerInfo readNullTerminatedText header
+    PalaceMsgTypes.GotRoomDescription -> readRoomDescription readBytes readShort readInt header
+    PalaceMsgTypes.GotUserList -> readUserList readByte readBytes readShort readInt readText header
     PalaceMsgTypes.RoomDescend -> return $ Inbound.NoOpMessage (Inbound.NoOp $ show messageType)
     -- RoomDescend message just means we're done receiving the room description & user list
-    PalaceMsgTypes.UserNew -> readUserEnteredRoomNotification connection messageConverters
+    PalaceMsgTypes.UserNew -> readUserEnteredRoomNotification readByte readBytes readShort readInt readText
     -- End logon sequence
 
-    PalaceMsgTypes.Talk -> readTalk connection header Inbound.PublicChat
-    PalaceMsgTypes.CrossRoomWhisper -> readTalk connection header Inbound.PrivateChat
-    PalaceMsgTypes.Say -> readEncodedTalk connection messageConverters header Inbound.PublicChat
-    PalaceMsgTypes.Whisper -> readEncodedTalk connection messageConverters header Inbound.PrivateChat
-    PalaceMsgTypes.Move -> readMovement connection messageConverters header
+    PalaceMsgTypes.Talk -> readTalk readNullTerminatedText header Inbound.PublicChat
+    PalaceMsgTypes.CrossRoomWhisper -> readTalk readNullTerminatedText header Inbound.PrivateChat
+    PalaceMsgTypes.Say -> readEncodedTalk readBytes readShort header Inbound.PublicChat
+    PalaceMsgTypes.Whisper -> readEncodedTalk readBytes readShort header Inbound.PrivateChat
+    PalaceMsgTypes.Move -> readMovement readShort header
 
-    PalaceMsgTypes.UserExitRoom -> readUserExitedRoomNotification connection header
-    PalaceMsgTypes.UserLeaving -> readUserDisconnectedNotification connection messageConverters header
+    PalaceMsgTypes.UserExitRoom -> readUserExitedRoomNotification header
+    PalaceMsgTypes.UserLeaving -> readUserDisconnectedNotification readInt header
 
-    PalaceMsgTypes.Superuser -> readUnknownMessage connection header
-    PalaceMsgTypes.SusrMsg -> readUnknownMessage connection header
-    PalaceMsgTypes.GlobalMsg -> readUnknownMessage connection header
-    PalaceMsgTypes.RoomMsg -> readUnknownMessage connection header
+    PalaceMsgTypes.Superuser -> readUnknownMessage readBytes header
+    PalaceMsgTypes.SusrMsg -> readUnknownMessage readBytes header
+    PalaceMsgTypes.GlobalMsg -> readUnknownMessage readBytes header
+    PalaceMsgTypes.RoomMsg -> readUnknownMessage readBytes header
 
-    PalaceMsgTypes.GotRoomDescriptionAlt -> readUnknownMessage connection header
-    PalaceMsgTypes.RequestRoomList -> readUnknownMessage connection header
-    PalaceMsgTypes.GotRoomList -> readUnknownMessage connection header
-    PalaceMsgTypes.GotReplyOfAllRooms -> readUnknownMessage connection header
-    PalaceMsgTypes.RequestUserList -> readUnknownMessage connection header
-    PalaceMsgTypes.GotReplyOfAllUsers -> readUnknownMessage connection header
+    PalaceMsgTypes.GotRoomDescriptionAlt -> readUnknownMessage readBytes header
+    PalaceMsgTypes.RequestRoomList -> readUnknownMessage readBytes header
+    PalaceMsgTypes.GotRoomList -> readUnknownMessage readBytes header
+    PalaceMsgTypes.GotReplyOfAllRooms -> readUnknownMessage readBytes header
+    PalaceMsgTypes.RequestUserList -> readUnknownMessage readBytes header
+    PalaceMsgTypes.GotReplyOfAllUsers -> readUnknownMessage readBytes header
 
-    PalaceMsgTypes.Logon -> readUnknownMessage connection header
-    PalaceMsgTypes.Authenticate -> readUnknownMessage connection header
-    PalaceMsgTypes.Authresponse -> readUnknownMessage connection header
-    PalaceMsgTypes.Bye -> readUnknownMessage connection header
+    PalaceMsgTypes.Logon -> readUnknownMessage readBytes header
+    PalaceMsgTypes.Authenticate -> readUnknownMessage readBytes header
+    PalaceMsgTypes.Authresponse -> readUnknownMessage readBytes header
+    PalaceMsgTypes.Bye -> readUnknownMessage readBytes header
 
-    PalaceMsgTypes.ChangeName -> readUnknownMessage connection header
-    PalaceMsgTypes.UserRename -> readUnknownMessage connection header
-    PalaceMsgTypes.UserDescription -> readUnknownMessage connection header
-    PalaceMsgTypes.UserColor -> readUnknownMessage connection header
-    PalaceMsgTypes.UserFace -> readUnknownMessage connection header
-    PalaceMsgTypes.UserProp -> readUnknownMessage connection header
-    PalaceMsgTypes.GotoRoom -> readUnknownMessage connection header
-    PalaceMsgTypes.Blowthru -> readUnknownMessage connection header
-    PalaceMsgTypes.NavError -> readUnknownMessage connection header
+    PalaceMsgTypes.ChangeName -> readUnknownMessage readBytes header
+    PalaceMsgTypes.UserRename -> readUnknownMessage readBytes header
+    PalaceMsgTypes.UserDescription -> readUnknownMessage readBytes header
+    PalaceMsgTypes.UserColor -> readUnknownMessage readBytes header
+    PalaceMsgTypes.UserFace -> readUnknownMessage readBytes header
+    PalaceMsgTypes.UserProp -> readUnknownMessage readBytes header
+    PalaceMsgTypes.GotoRoom -> readUnknownMessage readBytes header
+    PalaceMsgTypes.Blowthru -> readUnknownMessage readBytes header
+    PalaceMsgTypes.NavError -> readUnknownMessage readBytes header
 
-    PalaceMsgTypes.PropNew -> readUnknownMessage connection header
-    PalaceMsgTypes.PropMove -> readUnknownMessage connection header
-    PalaceMsgTypes.PropDelete -> readUnknownMessage connection header
-    PalaceMsgTypes.PictMove -> readUnknownMessage connection header
+    PalaceMsgTypes.PropNew -> readUnknownMessage readBytes header
+    PalaceMsgTypes.PropMove -> readUnknownMessage readBytes header
+    PalaceMsgTypes.PropDelete -> readUnknownMessage readBytes header
+    PalaceMsgTypes.PictMove -> readUnknownMessage readBytes header
 
-    PalaceMsgTypes.IncomingFile -> readUnknownMessage connection header
-    PalaceMsgTypes.RequestAsset -> readUnknownMessage connection header
-    PalaceMsgTypes.AssetQuery -> readUnknownMessage connection header
-    PalaceMsgTypes.AssetIncoming -> readUnknownMessage connection header
-    PalaceMsgTypes.AssetRegi -> readUnknownMessage connection header
+    PalaceMsgTypes.IncomingFile -> readUnknownMessage readBytes header
+    PalaceMsgTypes.RequestAsset -> readUnknownMessage readBytes header
+    PalaceMsgTypes.AssetQuery -> readUnknownMessage readBytes header
+    PalaceMsgTypes.AssetIncoming -> readUnknownMessage readBytes header
+    PalaceMsgTypes.AssetRegi -> readUnknownMessage readBytes header
 
-    PalaceMsgTypes.DoorLock -> readUnknownMessage connection header
-    PalaceMsgTypes.DoorUnlock -> readUnknownMessage connection header
-    PalaceMsgTypes.SpotState -> readUnknownMessage connection header
-    PalaceMsgTypes.SpotMove -> readUnknownMessage connection header
+    PalaceMsgTypes.DoorLock -> readUnknownMessage readBytes header
+    PalaceMsgTypes.DoorUnlock -> readUnknownMessage readBytes header
+    PalaceMsgTypes.SpotState -> readUnknownMessage readBytes header
+    PalaceMsgTypes.SpotMove -> readUnknownMessage readBytes header
 
-    PalaceMsgTypes.Draw -> readUnknownMessage connection header
-    PalaceMsgTypes.DrawCmd -> readUnknownMessage connection header
+    PalaceMsgTypes.Draw -> readUnknownMessage readBytes header
+    PalaceMsgTypes.DrawCmd -> readUnknownMessage readBytes header
     
-    PalaceMsgTypes.Pinged -> readUnknownMessage connection header
-    PalaceMsgTypes.PingBack -> readUnknownMessage connection header
-    PalaceMsgTypes.ServerDown -> readUnknownMessage connection header
-    PalaceMsgTypes.ConnectionDied -> readUnknownMessage connection header
+    PalaceMsgTypes.Pinged -> readUnknownMessage readBytes header
+    PalaceMsgTypes.PingBack -> readUnknownMessage readBytes header
+    PalaceMsgTypes.ServerDown -> readUnknownMessage readBytes header
+    PalaceMsgTypes.ConnectionDied -> readUnknownMessage readBytes header
 
-    PalaceMsgTypes.UnknownMessage -> readUnknownMessage connection header
+    PalaceMsgTypes.UnknownMessage -> readUnknownMessage readBytes header
 
     
 readHandshake :: PalaceMsgTypes.MessageType -> Net.PalaceConnection -> Inbound.Header -> IO Inbound.InboundMessage
@@ -120,17 +129,9 @@ readHandshake PalaceMsgTypes.LittleEndianServer connection header = do
 readHandshake PalaceMsgTypes.UnknownServer _ _ = throwIO $ userError "Unknown server type"
 readHandshake _ _ _ =  throwIO $ userError "Invalid server type"
 
-readAlternateLogonReply :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Inbound.InboundMessage
-readAlternateLogonReply connection messageConverters =
+readAlternateLogonReply :: IO Word8 -> IO Word16 -> IO Int -> (Int -> IO String) -> IO Inbound.InboundMessage
+readAlternateLogonReply readByte readShort readInt readText =
   do
-    let byteSource = Net.palaceByteSource connection
-        intReader = Net.palaceIntReader messageConverters
-        shortReader = Net.palaceShortReader messageConverters
-        readInt = Receive.readIntFromNetwork intReader byteSource
-        readByte = Receive.readByteFromNetwork byteSource
-        readText = Receive.readNullTerminatedTextFromNetwork byteSource
-        readShort = Receive.readShortFromNetwork shortReader byteSource
-
     crc <- readInt
     counter <- readInt
     userNameLength <- readByte
@@ -155,14 +156,9 @@ readAlternateLogonReply connection messageConverters =
 
     return . Inbound.LogonReplyMessage $ Inbound.LogonReply puidCounter puidCrc -- TODO When do these get used?
 
-readServerInfo :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Inbound.InboundMessage
-readServerInfo connection messageConverters =
+readServerInfo :: IO Word8 -> IO Int -> (Int -> IO String) -> IO Inbound.InboundMessage
+readServerInfo readByte readInt readText =
   do
-    let byteSource = Net.palaceByteSource connection
-        intReader = Net.palaceIntReader messageConverters
-        readInt = Receive.readIntFromNetwork intReader byteSource
-        readByte = Receive.readByteFromNetwork byteSource
-        readText = Receive.readTextFromNetwork byteSource
     permissions <- readInt
     size <- fromIntegral <$> readByte
     serverName <- readText size
@@ -177,46 +173,32 @@ readServerInfo connection messageConverters =
 readServerVersion :: Inbound.Header -> IO Inbound.InboundMessage
 readServerVersion header = return . Inbound.ServerVersionMessage $ Inbound.ServerVersion (Inbound.messageRefNumber header)
 
-readUserStatus :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Inbound.Header -> IO Inbound.InboundMessage
-readUserStatus connection messageConverters header =
+readUserStatus :: (Int -> IO [Word8]) -> IO Word16 -> Inbound.Header -> IO Inbound.InboundMessage
+readUserStatus readBytes readShort header =
   do
-    let byteSource = Net.palaceByteSource connection
-        shortReader = Net.palaceShortReader messageConverters
-        readShort = Receive.readShortFromNetwork shortReader byteSource
-        readBytes = Receive.readBytesFromNetwork byteSource
-        trailingBytes = (Inbound.messageSize header) - 2
+    let trailingBytes = (Inbound.messageSize header) - 2
     userFlags <- readShort
     _ <- readBytes trailingBytes
     return . Inbound.UserStatusMessage $ Inbound.UserStatusNotification userFlags
 
-readUserLogonNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Inbound.Header -> IO Inbound.InboundMessage
-readUserLogonNotification connection messageConverters header =
+readUserLogonNotification :: IO Int -> Inbound.Header -> IO Inbound.InboundMessage
+readUserLogonNotification readInt header =
   do
-    let byteSource = Net.palaceByteSource connection
-        intReader = Net.palaceIntReader messageConverters
-        readInt = Receive.readIntFromNetwork intReader byteSource
-        userWhoLoggedOn = Inbound.messageRefNumber header
+    let userWhoLoggedOn = Inbound.messageRefNumber header
     population <- readInt
     return . Inbound.UserLogonMessage $ Inbound.UserLogonNotification userWhoLoggedOn population
 
-readMediaServerInfo :: Net.PalaceConnection -> Inbound.Header -> IO Inbound.InboundMessage
-readMediaServerInfo connection header =
+readMediaServerInfo :: (Int -> IO String) -> Inbound.Header -> IO Inbound.InboundMessage
+readMediaServerInfo readNullTerminatedText header =
   do
-    let byteSource = Net.palaceByteSource connection
-    url <- Receive.readNullTerminatedTextFromNetwork byteSource $ Inbound.messageSize header
+    url <- readNullTerminatedText $ Inbound.messageSize header
     return . Inbound.MediaServerMessage $ Inbound.MediaServerInfo url
 
 -- room name, background image, overlay images, props, hotspots, draw commands
 -- TODO Finish this
-readRoomDescription :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Inbound.Header -> IO Inbound.InboundMessage
-readRoomDescription connection messageConverters header =
+readRoomDescription :: (Int -> IO [Word8]) -> IO Word16 -> IO Int -> Inbound.Header -> IO Inbound.InboundMessage
+readRoomDescription readBytes readShort readInt header =
   do
-    let byteSource = Net.palaceByteSource connection
-        intReader = Net.palaceIntReader messageConverters
-        shortReader = Net.palaceShortReader messageConverters
-        readShort = Receive.readShortFromNetwork shortReader byteSource
-        readInt = Receive.readIntFromNetwork intReader byteSource
-        readBytes = Receive.readBytesFromNetwork byteSource
     roomFlags <- readInt   -- unused
     face <- readInt        -- unused
     roomId <- fromIntegral <$> readShort
@@ -349,26 +331,17 @@ For each draw command -- has a 10-byte header and then a length specified by com
 
 
 -- List of users in the current room
-readUserList :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Inbound.Header -> IO Inbound.InboundMessage
-readUserList connection messageConverters header =
+readUserList :: IO Word8 -> (Int -> IO [Word8]) -> IO Word16 -> IO Int -> (Int -> IO String) -> Inbound.Header -> IO Inbound.InboundMessage
+readUserList readByte readBytes readShort readInt readText header =
   do
     let numberOfUsers = Inbound.messageRefNumber header
-    userList <- sequence $ replicate numberOfUsers (readSingleUser connection messageConverters)
+    userList <- sequence $ replicate numberOfUsers (readSingleUser readByte readBytes readShort readInt readText)
     return . Inbound.UserListMessage $ Inbound.UserListing userList
 
-readSingleUser :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Inbound.UserData
-readSingleUser connection messageConverters =
+readSingleUser :: IO Word8 -> (Int -> IO [Word8]) -> IO Word16 -> IO Int -> (Int -> IO String) -> IO Inbound.UserData
+readSingleUser readByte readBytes readShort readInt readText =
   do
-    let byteSource = Net.palaceByteSource connection
-        readByte = Receive.readByteFromNetwork byteSource
-        readBytes = Receive.readBytesFromNetwork byteSource
-        readText = Receive.readTextFromNetwork byteSource
-        shortReader = Net.palaceShortReader messageConverters
-        readShort = Receive.readShortFromNetwork shortReader byteSource
-        intReader = Net.palaceIntReader messageConverters
-        readInt = Receive.readIntFromNetwork intReader byteSource
-        
-        toPairs (propId:propCrc:xs) = (propId,propCrc) : toPairs xs
+    let toPairs (propId:propCrc:xs) = (propId,propCrc) : toPairs xs
         toPairs _ = []
         
     userId <- readInt
@@ -399,36 +372,31 @@ readSingleUser connection messageConverters =
       , Inbound.userPropInfo = propInfo
       }
 
-readUserEnteredRoomNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> IO Inbound.InboundMessage
-readUserEnteredRoomNotification connection messageConverters =
+readUserEnteredRoomNotification :: IO Word8 -> (Int -> IO [Word8]) -> IO Word16 -> IO Int -> (Int -> IO String) -> IO Inbound.InboundMessage
+readUserEnteredRoomNotification readByte readBytes readShort readInt readText =
   do
-    userData <- readSingleUser connection messageConverters
+    userData <- readSingleUser readByte readBytes readShort readInt readText
     return $ Inbound.UserEnteredRoomMessage userData
 
-readUserExitedRoomNotification :: Net.PalaceConnection -> Inbound.Header -> IO Inbound.InboundMessage
-readUserExitedRoomNotification connection header =
+readUserExitedRoomNotification :: Inbound.Header -> IO Inbound.InboundMessage
+readUserExitedRoomNotification header =
    do
     let userId = Inbound.messageRefNumber header
     return . Inbound.UserExitedRoomMessage $ Inbound.UserExitedRoom userId
 
-readUserDisconnectedNotification :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Inbound.Header -> IO Inbound.InboundMessage
-readUserDisconnectedNotification connection messageConverters header =
+readUserDisconnectedNotification :: IO Int -> Inbound.Header -> IO Inbound.InboundMessage
+readUserDisconnectedNotification readInt header =
   do
-    let byteSource = Net.palaceByteSource connection
-        intReader = Net.palaceIntReader messageConverters
-        readInt = Receive.readIntFromNetwork intReader byteSource
     population <- readInt
     return . Inbound.UserDisconnectedMessage $ Inbound.UserDisconnected population (Inbound.messageRefNumber header)
 
-readTalk :: Net.PalaceConnection -> Inbound.Header -> Inbound.ChatExposure -> IO Inbound.InboundMessage
-readTalk connection header exposure =
+readTalk :: (Int -> IO String) -> Inbound.Header -> Inbound.ChatExposure -> IO Inbound.InboundMessage
+readTalk readNullTerminatedText header exposure =
   do
-    let byteSource = Net.palaceByteSource connection
-        speaking = Inbound.messageRefNumber header
-        readText = Receive.readNullTerminatedTextFromNetwork byteSource
+    let speaking = Inbound.messageRefNumber header
         messageLength = Inbound.messageSize header
 
-    message <- truncateChatMessage <$> readText messageLength
+    message <- truncateChatMessage <$> readNullTerminatedText messageLength
 
     let chat = Inbound.Chat {
             Inbound.chatSpeaker = speaking
@@ -438,14 +406,10 @@ readTalk connection header exposure =
           }
     return $ Inbound.ChatMessage chat
 
-readEncodedTalk :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Inbound.Header -> Inbound.ChatExposure -> IO Inbound.InboundMessage
-readEncodedTalk connection messageConverters header exposure =
+readEncodedTalk :: (Int -> IO [Word8]) -> IO Word16 -> Inbound.Header -> Inbound.ChatExposure -> IO Inbound.InboundMessage
+readEncodedTalk readBytes readShort header exposure =
   do
-    let byteSource = Net.palaceByteSource connection
-        shortReader = Net.palaceShortReader messageConverters
-        readShort = Receive.readShortFromNetwork shortReader byteSource
-        readBytes = Receive.readBytesFromNetwork byteSource
-        speaking = Inbound.messageRefNumber header
+    let speaking = Inbound.messageRefNumber header
 
     -- header messageSize field is actually the message checksum + 1 ??
     fieldLength <- fromIntegral <$> readShort -- This is apparently the total length including these two bytes and the terminator
@@ -465,22 +429,18 @@ readEncodedTalk connection messageConverters header exposure =
 truncateChatMessage :: [a] -> [a]
 truncateChatMessage message = take 254 message
 
-readMovement :: Net.PalaceConnection -> Net.PalaceMessageConverters -> Inbound.Header -> IO Inbound.InboundMessage
-readMovement connection messageConverters header =
+readMovement :: IO Word16 -> Inbound.Header -> IO Inbound.InboundMessage
+readMovement readShort header =
   do
-    let byteSource = Net.palaceByteSource connection
-        shortReader = Net.palaceShortReader messageConverters
-        readShort = Receive.readShortFromNetwork shortReader byteSource
-        mover = Inbound.messageRefNumber header
+    let mover = Inbound.messageRefNumber header
     y <- fromIntegral <$> readShort
     x <- fromIntegral <$> readShort
     let notification = Inbound.MovementNotification { Inbound.x = x, Inbound.y = y, Inbound.userWhoMoved = mover }
     return $ Inbound.MovementMessage notification
 
-readUnknownMessage :: Net.PalaceConnection -> Inbound.Header -> IO Inbound.InboundMessage
-readUnknownMessage connection header =
+readUnknownMessage :: (Int -> IO [Word8]) -> Inbound.Header -> IO Inbound.InboundMessage
+readUnknownMessage readBytes header =
   do
-    let byteSource = Net.palaceByteSource connection
-    _ <- Receive.readBytesFromNetwork byteSource $ Inbound.messageSize header
+    _ <- readBytes $ Inbound.messageSize header
     let diagnosticMessage = "Unknown messsage: " ++ (show header)
     return $ Inbound.NoOpMessage (Inbound.NoOp diagnosticMessage)
