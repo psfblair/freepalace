@@ -17,7 +17,7 @@ main = withSocketsDo $ do -- TODO abstract out withSocketsDo?
   setLoggingLevels
   guiDataFileName <- getDataFileName "freepalace.resources.glade"
   guiComponents <- Gtk.init guiDataFileName
-  let initialState = State.DisconnectedState (State.Disconnected guiComponents Host.HostDirectory State.defaultSettings) -- TODO configs from config file
+  let initialState = State.DisconnectedState (State.initialDisconnectedState guiComponents State.defaultSettings) -- TODO configs from config file
       connectionRequestHandler = GuiHandlers.handleConnectRequested initialState Net.PalaceProtocol
   GUI.initializeGUI guiComponents connectionRequestHandler
   Gtk.start

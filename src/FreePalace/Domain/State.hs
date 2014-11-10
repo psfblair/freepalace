@@ -31,7 +31,7 @@ data Connected = Connected {
   } deriving Show
 
 data Settings = Settings {
-    thisUserName :: User.UserName
+      thisUserName :: User.UserName
   -- TODO  maxCacheSize
   -- TODO  roomDimensions
   } deriving Show
@@ -81,6 +81,14 @@ defaultSettings = Settings {
     thisUserName = "Haskell Curry"  -- TODO allow user to set user name
   }
 
+initialDisconnectedState :: GUI.Components -> Settings -> Disconnected
+initialDisconnectedState guiComponents settings =
+  Disconnected {
+      disconnectedGui = guiComponents
+    , disconnectedHostDirectory = Host.HostDirectory Map.empty
+    , disconnectedSettings = settings
+    }
+  
 initialConnectedState :: Disconnected -> ProtocolState -> Net.Hostname -> Net.PortId -> Connected
 initialConnectedState priorState protocol host port =
   case protocol of
@@ -88,7 +96,7 @@ initialConnectedState priorState protocol host port =
       protocolState = protocol
     , guiState = disconnectedGui priorState
     , hostState = initialHostStateFor host port
-    , hostDirectory = Host.HostDirectory
+    , hostDirectory = disconnectedHostDirectory priorState
     , userState = NotLoggedIn { username = thisUserName . disconnectedSettings $ priorState }
     , settings = disconnectedSettings priorState
     }
@@ -213,7 +221,9 @@ userIdFor currentState refId =
       User.UserMap refIdsToUsers = userMap . hostState $ currentState
   in Map.findWithDefault defaultUserId refId refIdsToUsers
 
-
+protocol :: Disconnected -> Net.Hostname -> Net.PortId -> Net.Protocol
+protocol disconnectedState host port = Host.protocolFor (disconnectedHostDirectory disconnectedState) host port
+  
 communicationFromChatData :: Connected -> InboundMessages.Chat -> Chat.Communication
 communicationFromChatData currentState InboundMessages.Chat { InboundMessages.chatSpeaker = spkr
                                                             , InboundMessages.chatRecipient = recvr

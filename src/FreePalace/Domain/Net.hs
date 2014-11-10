@@ -13,7 +13,7 @@ type URL      = String
 data IncomingByteSource = SocketByteSource Socket.Socket
 data OutgoingByteSink   = SocketByteSink   Socket.Socket
 
-data Protocol = PalaceProtocol
+data Protocol = PalaceProtocol deriving Show
 
 data PalaceConnection = PalaceConnection {
     palaceByteSource :: IncomingByteSource

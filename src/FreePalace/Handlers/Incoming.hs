@@ -15,9 +15,8 @@ import qualified FreePalace.Net.PalaceProtocol.Connect             as Connect
 
 
 -- TODO Time out if this takes too long, don't keep listening, tell the main thread.
--- TODO Make sure exceptions are caught so as not to block the main thread waiting on the MVar
-initializeMessageDispatcher :: MVar State.Connected -> State.Connected -> IO ()
-initializeMessageDispatcher conveyorOfStateBackToMainThread clientState =
+initializeMessageDispatcher :: State.Connected -> IO ()
+initializeMessageDispatcher clientState =
   do
     Log.debugM "Incoming.Message.Await" $ "Awaiting initial handshake with state: " ++ (show clientState)
     header <- readHeader clientState
@@ -27,7 +26,6 @@ initializeMessageDispatcher conveyorOfStateBackToMainThread clientState =
        InboundMessages.HandshakeMessage _ -> handleInboundEvent clientState message
        _ -> throwIO $ userError "Connection failed. No handshake."
     Log.debugM "Incoming.Message.Processed" $ "Message processed. New state: " ++ (show newState)
-    putMVar conveyorOfStateBackToMainThread newState
     
     dispatchIncomingMessages newState
   

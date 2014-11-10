@@ -21,6 +21,7 @@ executable freepalace
   other-modules:       
   -- other-extensions:    
   build-depends:       base >=4.7 && <4.8
+                     , sodium
                      , containers, gtk
                      , network, HTTP, filepath, directory
                      , bytestring, text, binary, encoding, convertible, regex-compat
@@ -35,6 +36,7 @@ test-suite freepalace-test
   build-depends:       base >=4.7 && <4.8
 
                      -- Copied from the main build
+                     , sodium
                      , containers, gtk
                      , network, HTTP, filepath, directory
                      , bytestring, text, binary, encoding, convertible, regex-compat

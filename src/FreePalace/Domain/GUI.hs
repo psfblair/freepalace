@@ -1,9 +1,20 @@
 module FreePalace.Domain.GUI where
 
--- TODO Need Disconnect menu item and Quit menu item
+import qualified System.FilePath        as Path
+import qualified FRP.Sodium             as FRP
 
 import qualified FreePalace.Domain.Chat as Chat
-import qualified System.FilePath        as Path
+
+
+data GuiAction = DisconnectSelected
+     	       | ConnectSelected
+     	       | QuitSelected
+
+     	       | ConnectOkClicked 
+     	       | ConnectCancelClicked
+
+     	       | ChatSendClicked
+     	       | ChatEntered  deriving Show
 
 data MainWindow = MainWindow {
   quit              :: IO (),
@@ -37,6 +48,10 @@ data Canvas = Canvas {
   displayBackground :: Path.FilePath -> IO ()
 }
 
+data MenuItem = MenuItem {
+  onMenuItemSelect :: IO () -> IO ()
+}
+
 data Components = Components {
     mainWindow       :: MainWindow
 
@@ -52,7 +67,37 @@ data Components = Components {
   , chatSend         :: Button
 
   , roomCanvas       :: Canvas
+
+  , connectMenuItem    :: MenuItem
+  , disconnectMenuItem :: MenuItem
+  , quitMenuItem       :: MenuItem
 }
 
 instance Show Components where
   show _ = "Components"
+
+bindComponents :: Components -> IO (FRP.Event GuiAction)
+bindComponents guiComponents =
+  do  
+    let connectOkButton = connectOk guiComponents
+        connectCancelButton = connectCancel guiComponents
+        chatEntryField = chatEntry guiComponents
+        chatSendButton = chatSend guiComponents
+        connectMenuOption = connectMenuItem guiComponents
+        disconnectMenuOption = disconnectMenuItem guiComponents
+        quitMenuOption = quitMenuItem guiComponents
+        
+    (eGuiAction, pushGuiAction) <- FRP.sync FRP.newEvent
+
+    onButtonClick connectOkButton         (FRP.sync $ pushGuiAction ConnectOkClicked)
+    onButtonClick connectCancelButton     (FRP.sync $ pushGuiAction ConnectCancelClicked)
+
+    onEnterKeyPress chatEntryField        (FRP.sync $ pushGuiAction ChatEntered)
+    onButtonClick chatSendButton          (FRP.sync $ pushGuiAction ChatSendClicked)
+
+    onMenuItemSelect connectMenuOption    (FRP.sync $ pushGuiAction ConnectSelected)
+    onMenuItemSelect disconnectMenuOption (FRP.sync $ pushGuiAction DisconnectSelected)
+    onMenuItemSelect quitMenuOption       (FRP.sync $ pushGuiAction QuitSelected)
+
+    return eGuiAction
+

@@ -28,7 +28,11 @@ data GtkGui = GtkGui {
   , chatButton       :: Button
 
   , roomImage        :: Image
-}
+
+  , connectMenuItem    :: MenuItem
+  , disconnectMenuItem :: MenuItem
+  , quitMenuItem       :: MenuItem
+  }
 
 init :: FilePath -> IO (GUI.Components)
 init gladepath =
@@ -68,11 +72,16 @@ loadGladeComponents gladepath =
 
     guiRoomImage <- builderGetObject builder castToImage "roomImage"
 
+    guiConnectMenuItem <- builderGetObject builder castToMenuItem "connectMenuItem"
+    guiDisconnectMenuItem <- builderGetObject builder castToMenuItem "disconnectMenuItem"
+    guiQuitMenuItem <- builderGetObject builder castToMenuItem "quitMenuItem"
+
     return $ GtkGui guiMainWindow
       guiConnectDialog guiConnectHostEntry guiConnectPortEntry guiConnectOkButton guiConnectCancelButton
       guiLogWindow guiLogTextView guiLogTextBuffer
       guiChatEntry guiChatButton
       guiRoomImage
+      guiConnectMenuItem guiDisconnectMenuItem guiQuitMenuItem
 
 wrapComponents :: GtkGui -> GUI.Components
 wrapComponents gui =
@@ -91,6 +100,10 @@ wrapComponents gui =
     , GUI.chatSend = wrapButton $ chatButton gui
 
     , GUI.roomCanvas = wrapDrawingArea $ roomImage gui
+
+    , GUI.connectMenuItem = wrapMenuItem $ connectMenuItem gui
+    , GUI.disconnectMenuItem = wrapMenuItem $ disconnectMenuItem gui
+    , GUI.quitMenuItem = wrapMenuItem $ quitMenuItem gui
   }
 
 wrapMainWindow :: GtkGui -> GUI.MainWindow
@@ -164,4 +177,14 @@ wrapDrawingArea roomBgImage = GUI.Canvas {
                              (Events.Rectangle _  _ width height) <- Widget.widgetGetAllocation roomBgImage
                              pixbuf <- Pixbuf.pixbufNewFromFileAtScale imagePath width height True
                              Image.imageSetFromPixbuf roomBgImage pixbuf
+  }
+
+
+wrapMenuItem :: MenuItem -> GUI.MenuItem
+wrapMenuItem menuItem = GUI.MenuItem {
+    GUI.onMenuItemSelect = \ioToPerform ->
+                            do
+                              _ <- onSelect menuItem ioToPerform
+                              return ()
+
   }
