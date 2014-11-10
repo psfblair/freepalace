@@ -23,7 +23,7 @@ executable freepalace
   build-depends:       base >=4.7 && <4.8
                      , sodium
                      , containers, gtk
-                     , network, HTTP, filepath, directory
+                     , network, network-uri, HTTP, filepath, directory
                      , bytestring, text, binary, encoding, convertible, regex-compat
                      , hslogger
   hs-source-dirs:      src
@@ -38,7 +38,7 @@ test-suite freepalace-test
                      -- Copied from the main build
                      , sodium
                      , containers, gtk
-                     , network, HTTP, filepath, directory
+                     , network, network-uri, HTTP, filepath, directory
                      , bytestring, text, binary, encoding, convertible, regex-compat
                      , hslogger
 
