@@ -1,4 +1,4 @@
-{-# LANGUAGE DoRec #-}
+{-# LANGUAGE RecursiveDo #-}
 module FreePalace.Handlers.Outgoing where
 
 import           Control.Applicative
@@ -18,6 +18,7 @@ import qualified FreePalace.Messages.Inbound                       as InboundMes
 import qualified FreePalace.Messages.PalaceProtocol.InboundReader  as PalaceInbound
 import qualified FreePalace.Messages.PalaceProtocol.OutboundWriter as PalaceOutbound
 import qualified FreePalace.Net.PalaceProtocol.Connect             as Connect
+import qualified FreePalace.Logger                                 as ApplicationLog
 
 data GUIEventHandlers = GUIEventHandlers {
   handleUserTextEntry :: IO ()
@@ -42,130 +43,107 @@ bindUserTextEntry guiComponents userTextEntryHandler =
     GUI.onEnterKeyPress chatEntryField userTextEntryHandler
     GUI.onButtonClick chatSendButton userTextEntryHandler
 
-
-  
--- TODO Once client is connected and disconnects, how does this function get the updated state for the next connection?
-handleConnectRequested :: State.ClientState -> Net.Protocol -> Net.Hostname -> Net.PortId -> IO ()
-handleConnectRequested clientState protocol host port =
-  do
-    disconnected <- disconnect clientState
-    Log.debugM "Connection" $ "Connecting to " ++ host ++ ":" ++ port
-    newState <- catch (State.ConnectedState <$> connect disconnected protocol host port)
-                      (\(SomeException exception) ->
-                        do
-                          Log.errorM "Connection" $ show exception
-                          return $ State.DisconnectedState disconnected)
-
-    case newState of
-     State.ConnectedState connectedState ->
-       do
-         stateFromMessageReceiverThread <- newEmptyMVar
-         -- TODO Must bind disconnect and reconnect to something that will stop the forked process
-         -- i.e., Control.Concurrent.killThread :: ThreadId -> IO ()
-         -- TODO If this thread dies or an exception is thrown on it, need to handle the disconnect
-         messageListenerThreadId <- forkIO $ Incoming.initializeMessageDispatcher stateFromMessageReceiverThread connectedState
-         readyState <- takeMVar stateFromMessageReceiverThread
-         bindHandlers readyState $ guiEventHandlers readyState         
-         sendLogin readyState         
-         GUI.closeDialog . GUI.connectDialog . State.guiState $ readyState
-         return ()
-     State.DisconnectedState disconnectedState ->
-       do
-         GUI.closeDialog . GUI.connectDialog . State.disconnectedGui $ disconnectedState  -- TODO Show connection error somehow or something in GUI indicating failure
-         return ()
-
-                         
-outboundMain :: State.ClientState -> IO ()
-outboundMain clientState protocol host port = do
-  let guiComponents = case clientState of (State.DisconnectedState state) -> GUI.disconnectedGui state
-                                          (State.ConnectedState    state) -> GUI.guiState state
-  eGuiAction <- GUI.bindComponents guiComponents
-  let eLogGui = fmap ApplicationLog.fromGuiAction eGuiAction
-  sync $ FRP.listen eLogGui ApplicationLog.debugLog
-    
+outboundMain :: State.ClientState ->  IO ()
+outboundMain clientState = do
   rec
-    bState <- FRP.accum clientState eStateUpdate       -- Behavior State.ClientState. Only outbound events updating state are Disconnect and Connected.
-                                                       -- WE SHOULD SEPARATE PROTOCOL STATE FROM THE REST. ONLY PROTOCOL MANIPULATED ON BOTH THREADS.
-                                                       -- We read and manipulate GUI in this thread but don't maintain or manipulate its state.
-    let eGuiActionWithState = snapshot (,) eGuiAction bState
+    let guiComponents = case clientState of (State.DisconnectedState state) -> State.disconnectedGui state
+                                            (State.ConnectedState    state) -> State.guiState state
+    eGuiAction <- GUI.bindComponents guiComponents
+    let eLogGui = fmap ApplicationLog.fromGuiAction eGuiAction
+    FRP.sync $ FRP.listen eLogGui ApplicationLog.debugLog
+    
+    bState <- FRP.sync $ FRP.accum clientState eStateUpdate -- Only outbound events updating state are Disconnect and Connected.
+              -- WE SHOULD SEPARATE PROTOCOL STATE FROM THE REST. ONLY PROTOCOL MANIPULATED ON BOTH THREADS.
+              -- We read and manipulate GUI in this thread but don't maintain or manipulate its state.
+    let eGuiActionWithState = FRP.snapshot (,) eGuiAction bState
         eDisconnected = handleGuiDisconnectSelected eGuiActionWithState
-        eConnected = handleGuiConnectRequest eGuiActionWithState
-        eMessageListenerStarted = handleStartingMessageListener eConnected
-
-        eDisconnectedClientState = fmap (\disconnected -> State.DisconnectedState disconnected) eDisconnected
-        eConnectedClientState = fmap (\connected -> State.ConnectedState connected) eConnected
-        eStateUpdate = merge eDisconnectedState eConnectedState
+        eConnecting = handleGuiConnectRequest eGuiActionWithState
         
-    sync $ FRP.listen eMessageListenerStarted sendLogin  -- Need to pass userId        
-    sync $ FRP.listen eStartingMessageListener startMessageReceiverThread  -- push the MVar in here. put event in MVar?
+    eIncomingMessageReceived <- handleStartingMessageListener bState eConnecting
+    
+    let eConnected = FRP.filterE firstMessageAfterConnecting $ FRP.snapshot (\newState oldState -> oldState) eIncomingMessageReceived bState 
+        eDisconnectedClientState = fmap State.DisconnectedState eDisconnected
+        eConnectingClientState = fmap State.ConnectingState eConnecting
+        eMessageReceivedClientState = fmap State.ConnectedState eIncomingMessageReceived
+        eStateUpdate = FRP.merge eDisconnectedClientState $ FRP.merge  eConnectingClientState eMessageReceivedClientState
 
-     -- timeoutEvent -- Do later. If disconnect/connect come back too late, throw them away. (Need an ID?)
-    sync $ FRP.listen eStateUpdate [GUI...]
+        firstMessageAfterConnecting (State.ConnectingState _) = True
+        firstMessageAfterConnecting _ = False
+        closeConnectDialog clientState = GUI.closeDialog . GUI.connectDialog $ State.guiStateFrom clientState
 
+  FRP.sync $ FRP.listen eConnected sendLogin  -- Need to pass userId        
+     -- TODO Issue timeoutEvent -- If disconnect/connect come back too late, throw them away. (Need an ID?)
+     -- TODO How to handle exceptions in all this? Need
+    -- eConnectFailure
+  io <- FRP.sync $ FRP.listen eConnected closeConnectDialog
+  io
 -- Log "connecting to host port"
 -- Log "connected to host port"
 
 -- For talk: (...userId..., ...selectedUserId..., ...messageText...)
 
-                                              -- ConnectCancel event needs gui state
-                                                     -- just needs to close GUI connect window
-                                              -- Speak event needs connection, messageConverters, user, selected user, value in text box, 
-                                              -- Login event needs connection, messageConverters, user
-
-handleStartingMessageListener :: FRP.Event State.Connected -> FRP.Event State.Connected -- The resulting event has to have the userID that resulted from the handshake
-handleStartingMessageListener eConnected =
-  -- MessageListenerThreadId should go in the state
-           messageListenerThreadId <- forkIO $ Incoming.initializeMessageDispatcher connectedState
-
-
-handleGuiConnectRequest :: FRP.Event (GUI.GuiAction, State.ClientState) -> FRP.Event State.Connected
+      -- ConnectCancel event needs gui state
+      -- just needs to close GUI connect window
+      -- Speak event needs connection, messageConverters, user, selected user, value in text box, 
+      -- Login event needs connection, messageConverters, user
+             
+handleGuiConnectRequest :: FRP.Event (GUI.GuiAction, State.ClientState) -> FRP.Event State.Connecting
 handleGuiConnectRequest eGuiActionWithState = do
-  (eDisconnected, pushDisconnected) <- sync newEvent
-  (eConnected, pushConnected) <- sync newEvent
-  sync $ FRP.listen eDisconnectListenable disconnect
-  sync $ FRP.listen eConnectListenable connect
-  eConnected
-  
-  where eConnectRequest = FRP.filterE isConnectOkClicked eGuiActionWithState 
-        eDisconnectListenable = fmap (\guiAction, clientState -> clientState, pushDisconnected) eConnectRequest 
-        eConnectListenable = fmap (\disconnected -> disconnected, pushConnected) eDisconnected
-        isConnectOkClicked (GUI.ConnectOkClicked, _) = True
+  (eDisconnected, pushDisconnected) <- FRP.sync FRP.newEvent
+  (eConnecting, pushConnecting) <- FRP.sync FRP.newEvent
+  let eConnectRequest = FRP.filterE isConnectOkClicked eGuiActionWithState 
+      eDisconnectListenable = fmap (\(guiAction, clientState) -> (clientState, pushDisconnected)) eConnectRequest 
+      eConnectListenable = fmap (\disconnected -> (disconnected, pushConnecting)) eDisconnected
+  FRP.sync $ FRP.listen eDisconnectListenable disconnect
+  FRP.sync $ FRP.listen eConnectListenable connect
+  eConnecting
+  where isConnectOkClicked (GUI.ConnectOkClicked, _) = True
         isConnectOkClicked _ = False
+
+handleStartingMessageListener :: FRP.Behavior State.ClientState -> FRP.Event State.Connecting -> IO (FRP.Event State.Connected)
+handleStartingMessageListener bState eConnecting = do
+  (eIncomingMessage, pushIncomingMessage) <- FRP.sync FRP.newEvent --TODO Where does eIncomingMessage get dealt with?
+  messageListenerThreadId <- forkIO $ Incoming.initializeMessageDispatcher bState pushIncomingMessage
+  let initialConnectedState threadId connectingState =
+        State.initialConnectedState connectingState threadId host port
+        where (host, port) = State.connectingHostAddress connectingState
+  return $ fmap (initialConnectedState messageListenerThreadId) eConnecting
         
 handleGuiDisconnectSelected :: FRP.Event (GUI.GuiAction, State.ClientState) -> FRP.Event State.Disconnected
 handleGuiDisconnectSelected eGuiActionWithState = do
-  (eDisconnected, pushDisconnected) <- sync newEvent
-  sync $ FRP.listen eDisconnectListenable disconnect
+  (eDisconnected, pushDisconnected) <- FRP.sync FRP.newEvent
+  let eDisconnectRequest = FRP.filterE isDisconnectSelected eGuiActionWithState
+      eDisconnectListenable = fmap (\(guiAction, clientState) -> (clientState, pushDisconnected)) eDisconnectRequest 
+  FRP.sync $ FRP.listen eDisconnectListenable disconnect
   eDisconnected
-  
-  where eDisconnectRequest = FRP.filterE isDisconnectSelected eGuiActionWithState
-        eDisconnectListenable = fmap (\guiAction, clientState -> clientState, pushDisconnected) eDisconnectRequest 
-        isDisconnectSelected (GUI.DisconnectSelected, _) = True
+  where isDisconnectSelected (GUI.DisconnectSelected, _) = True
         isDisconnectSelected _ = False
         
--- TODO State should include listener thread ID if available
-disconnect :: (State.ClientState, (State.Disconnected -> FRP.Reactive ())) -> IO ()
-disconnect (disconnected@(State.DisconnectedState _), pushDisconnected) = sync $ pushDisconnected disconnected
-disconnect ((State.ConnectedState priorState), pushDisconnected) = do
+disconnect :: (State.ClientState, State.Disconnected -> FRP.Reactive ()) -> IO ()
+disconnect (disconnected, pushDisconnected) =
+  FRP.sync $ pushDisconnected (State.disconnectedStateFrom disconnected)
+disconnect (connecting@(State.ConnectingState priorState), pushDisconnected) = do
+  case State.connectingProtocolState priorState of
+    State.PalaceProtocolState connection _ -> Connect.disconnect connection -- This does not rethrow exceptions
+  FRP.sync $ pushDisconnected (State.disconnectedStateFrom connecting)
+disconnect (connected@(State.ConnectedState priorState), pushDisconnected) = do
   -- TODO end message processing thread if in the state
   case State.protocolState priorState of
     State.PalaceProtocolState connection _ -> Connect.disconnect connection -- This does not rethrow exceptions
-  let disconnectedState = State.disconnectedStateFrom priorState
-  sync $ pushDisconnected disconnectedState
+  FRP.sync $ pushDisconnected (State.disconnectedStateFrom connected)
 
-connect :: (State.Disconnected, (State.Connected -> FRP.Reactive ()) -> IO () 
-connect (priorState, pushConnected) =
-  do
-    let guiComponents = State.guiState priorState
-    host <- textValue $ connectHostEntry guiComponents
-    port <- textValue $ connectPortEntry guiComponents
-    let protocol = State.protocol priorState host port
-        newProtocolState = case protocol of
-                             Net.PalaceProtocol -> do
-                               connection <- Connect.connect host port
-                               State.PalaceProtocolState connection Connect.defaultPalaceMessageConverters
-        newState = State.initialConnectedState priorState newProtocolState host port
-    sync $ pushConnected newState
+connect :: (State.Disconnected, State.Connecting -> FRP.Reactive ()) -> IO () 
+connect (priorState, pushConnected) = do
+  let guiComponents = State.guiState priorState
+  host <- GUI.textValue $ GUI.connectHostEntry guiComponents
+  port <- GUI.textValue $ GUI.connectPortEntry guiComponents
+  let protocol = State.protocolFor priorState host port
+      newProtocolState = case protocol of
+                           Net.PalaceProtocol -> do
+                             connection <- Connect.connect host port
+                             State.PalaceProtocolState connection Connect.defaultPalaceMessageConverters
+      newState = State.connectingStateFor priorState newProtocolState host port
+  FRP.sync $ pushConnected newState
 
 sendLogin :: State.Connected -> IO ()
 sendLogin clientState =

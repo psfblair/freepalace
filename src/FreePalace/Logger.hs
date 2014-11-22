@@ -8,11 +8,11 @@ data Loggable = Loggable LoggerName LogMessage
 type LoggerName = String
 type LogMessage = String
 
-fromGuiEvent :: GUI.GuiEvent -> Loggable
-fromGuiEvent event =
+fromGuiAction :: GUI.GuiAction -> Loggable
+fromGuiAction event =
   Loggable ("Gui." ++ eventName) eventName
   where eventName = show event
-
+        
 debugLog :: Loggable -> IO ()
 debugLog (Loggable loggerName logMessage) = Log.debugM loggerName logMessage
 

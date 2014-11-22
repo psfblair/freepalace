@@ -13,21 +13,33 @@ import qualified Network.URI                 as Network
 
 data ClientState =
     DisconnectedState Disconnected
+  | ConnectingState Connecting
   | ConnectedState Connected
+    deriving Show
 
 data Disconnected = Disconnected {
-    disconnectedGui           :: GUI.Components
+    disconnectedSettings      :: Settings
+  , disconnectedGui           :: GUI.Components
   , disconnectedHostDirectory :: Host.HostDirectory
-  , disconnectedSettings      :: Settings
-  }
+  } deriving Show
+
+data Connecting = Connecting {
+    connectingSettings      :: Settings
+  , connectingProtocolState :: ProtocolState
+  , connectingHostAddress   :: Host.HostAddress
+  , connectingGuiState      :: GUI.Components
+  , connectingHostDirectory :: Host.HostDirectory
+  , connectingUserState     :: UserState
+} deriving Show
 
 data Connected = Connected {
-    settings      :: Settings
-  , protocolState :: ProtocolState
-  , guiState      :: GUI.Components
-  , hostState     :: HostState
-  , hostDirectory :: Host.HostDirectory
-  , userState     :: UserState
+    settings                :: Settings
+  , protocolState           :: ProtocolState
+  , messageListenerThreadId :: Int
+  , guiState                :: GUI.Components
+  , hostState               :: HostState
+  , hostDirectory           :: Host.HostDirectory
+  , userState               :: UserState
   } deriving Show
 
 data Settings = Settings {
@@ -41,8 +53,7 @@ instance Show ProtocolState where
    show _ = "ProtocolState"
 
 data HostState = HostState {
-    hostname         :: Net.Hostname
-  , portId           :: Net.PortId
+    hostAddress      :: Host.HostAddress
   -- , serverName       :: Maybe Domain.ServerName
   -- TODO , serverVersion :: ServerVersion
   , mediaServer      :: Maybe Network.URI
@@ -82,29 +93,57 @@ defaultSettings = Settings {
   }
 
 initialDisconnectedState :: GUI.Components -> Settings -> Disconnected
-initialDisconnectedState guiComponents settings =
+initialDisconnectedState guiComponents initialSettings =
   Disconnected {
       disconnectedGui = guiComponents
     , disconnectedHostDirectory = Host.HostDirectory Map.empty
-    , disconnectedSettings = settings
-    }
-  
-initialConnectedState :: Disconnected -> ProtocolState -> Net.Hostname -> Net.PortId -> Connected
-initialConnectedState priorState protocol host port =
-  case protocol of
-   PalaceProtocolState _ _ -> Connected {
-      protocolState = protocol
-    , guiState = disconnectedGui priorState
-    , hostState = initialHostStateFor host port
-    , hostDirectory = disconnectedHostDirectory priorState
-    , userState = NotLoggedIn { username = thisUserName . disconnectedSettings $ priorState }
-    , settings = disconnectedSettings priorState
+    , disconnectedSettings = initialSettings
     }
 
-initialHostStateFor :: Net.Hostname -> Net.PortId -> HostState
-initialHostStateFor hostName portid = HostState {
-    hostname = hostName
-  , portId = portid
+
+connectingStateFor :: Disconnected -> ProtocolState -> Net.Hostname -> Net.PortId -> Connecting
+connectingStateFor priorState connectingProtocol host port =
+  Connecting {
+      connectingSettings = disconnectedSettings priorState
+    , connectingProtocolState = connectingProtocol
+    , connectingHostAddress = (host, port)                            
+    , connectingGuiState = disconnectedGui priorState
+    , connectingHostDirectory = disconnectedHostDirectory priorState
+    , connectingUserState = NotLoggedIn { username = thisUserName . disconnectedSettings $ priorState }
+    }
+
+withUserRefId :: Connecting -> User.UserRefId -> Connecting
+withUserRefId currentState refId =
+  let currentUserName = case connectingUserState currentState of
+        NotLoggedIn { username = name } -> name
+        LoggedIn    { userId = theUserId } -> User.userName theUserId
+  in currentState {
+    connectingUserState = LoggedIn {
+       userId = User.UserId {
+            User.userRef = refId
+          , User.userName = currentUserName
+          }
+       }
+    }
+
+withProtocol :: Connecting -> ProtocolState -> Connecting
+withProtocol currentState updatedProtocol = currentState { connectingProtocolState = updatedProtocol }
+
+initialConnectedState :: Connecting -> Int -> Connected
+initialConnectedState priorState threadId =
+  Connected {
+      protocolState = connectingProtocolState priorState
+    , messageListenerThreadId = threadId
+    , guiState = connectingGuiState priorState
+    , hostState = initialHostStateFor $ connectingHostAddress priorState
+    , hostDirectory = connectingHostDirectory priorState
+    , userState = connectingUserState priorState
+    , settings = connectingSettings priorState
+    }
+
+initialHostStateFor :: Host.HostAddress -> HostState
+initialHostStateFor address = HostState {
+    hostAddress = address
   , mediaServer = Nothing
   , roomList = Host.RoomList
   , userMap = initialIdToUserIdMapping
@@ -123,28 +162,23 @@ initialRoomState = CurrentRoomState {
   , inhabitants = []         
   }
   
-disconnectedStateFrom :: Connected -> Disconnected
-disconnectedStateFrom priorState =
-    let gui = guiState priorState
-        priorSettings = settings priorState
-    in Disconnected gui Host.HostDirectory priorSettings
+disconnectedStateFrom :: ClientState -> Disconnected
+disconnectedStateFrom (DisconnectedState disconnected) = disconnected
+disconnectedStateFrom (ConnectingState connecting) = Disconnected {
+    disconnectedSettings = connectingSettings connecting
+  , disconnectedHostDirectory = connectingHostDirectory connecting
+  , disconnectedGui = connectingGuiState connecting
+  }
+disconnectedStateFrom (ConnectedState connected) = Disconnected {
+    disconnectedSettings = settings connected
+  , disconnectedHostDirectory = hostDirectory connected
+  , disconnectedGui = guiState connected
+  }
 
-withUserRefId :: Connected -> User.UserRefId -> Connected
-withUserRefId currentState refId =
-  let currentUserName = case userState currentState of
-        NotLoggedIn { username = name } -> name
-        LoggedIn    { userId = theUserId } -> User.userName theUserId
-  in currentState {
-    userState = LoggedIn {
-       userId = User.UserId {
-            User.userRef = refId
-          , User.userName = currentUserName
-          }
-       }
-    }
-
-withProtocol :: Connected -> ProtocolState -> Connected
-withProtocol currentState updatedProtocol = currentState { protocolState = updatedProtocol }
+guiStateFrom :: ClientState -> GUI.Components
+guiStateFrom (DisconnectedState disconnected) = disconnectedGui disconnected
+guiStateFrom (ConnectingState connecting) = connectingGuiState connecting
+guiStateFrom (ConnectedState connected) = guiState connected
 
 withMediaServerInfo :: Connected -> InboundMessages.MediaServerInfo -> Connected
 withMediaServerInfo currentState (InboundMessages.MediaServerInfo mediaServerUrl) =
@@ -221,8 +255,8 @@ userIdFor currentState refId =
       User.UserMap refIdsToUsers = userMap . hostState $ currentState
   in Map.findWithDefault defaultUserId refId refIdsToUsers
 
-protocol :: Disconnected -> Net.Hostname -> Net.PortId -> Net.Protocol
-protocol disconnectedState host port = Host.protocolFor (disconnectedHostDirectory disconnectedState) host port
+protocolFor :: Disconnected -> Net.Hostname -> Net.PortId -> Net.Protocol
+protocolFor disconnectedState = Host.protocolFor (disconnectedHostDirectory disconnectedState)
   
 communicationFromChatData :: Connected -> InboundMessages.Chat -> Chat.Communication
 communicationFromChatData currentState InboundMessages.Chat { InboundMessages.chatSpeaker = spkr

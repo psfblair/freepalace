@@ -3,6 +3,7 @@ module FreePalace.Handlers.Incoming where
 import           Control.Concurrent
 import           Control.Exception
 import qualified System.Log.Logger                                 as Log
+import qualified FRP.Sodium                                        as FRP
 
 import qualified FreePalace.Domain.Chat                            as Chat
 import qualified FreePalace.Domain.GUI                             as GUI
@@ -14,46 +15,78 @@ import qualified FreePalace.Messages.PalaceProtocol.InboundReader  as PalaceInbo
 import qualified FreePalace.Net.PalaceProtocol.Connect             as Connect
 
 
--- TODO Time out if this takes too long, don't keep listening, tell the main thread.
-initializeMessageDispatcher :: State.Connected -> IO ()
-initializeMessageDispatcher clientState =
+initializeMessageDispatcher :: FRP.Behavior State.ClientState -> (State.ClientState -> FRP.Reactive ()) -> IO ()
+initializeMessageDispatcher bState pushIncomingMessage =
   do
-    Log.debugM "Incoming.Message.Await" $ "Awaiting initial handshake with state: " ++ (show clientState)
-    header <- readHeader clientState
-    Log.debugM "Incoming.Message.Header" (show header)
-    message <- readMessage clientState header
+    clientState <- FRP.sync $ FRP.sample bState 
+    Log.debugM "Incoming.Message.Await" $ "Awaiting initial handshake with state: " ++ show clientState
+    message <- readMessage clientState
     newState <- case message of
-       InboundMessages.HandshakeMessage _ -> handleInboundEvent clientState message
+       (InboundMessages.HandshakeMessage handshake) -> handleHandshake clientState handshake
        _ -> throwIO $ userError "Connection failed. No handshake."
-    Log.debugM "Incoming.Message.Processed" $ "Message processed. New state: " ++ (show newState)
+    Log.debugM "Incoming.Message.Processed" $ "Message processed. New state: " ++ show newState
+    FRP.sync $ pushIncomingMessage (State.ConnectingState newState)
     
-    dispatchIncomingMessages newState
+    dispatchIncomingMessages bState pushIncomingMessage
   
 -- TODO Handle connection loss
-dispatchIncomingMessages :: State.Connected -> IO ()
-dispatchIncomingMessages clientState =
+dispatchIncomingMessages :: FRP.Behavior State.ClientState -> (State.ClientState -> FRP.Reactive ()) -> IO ()
+dispatchIncomingMessages bState pushIncomingMessage =
   do
-    Log.debugM "Incoming.Message.Await" $ "Awaiting messages with state: " ++ (show clientState)
-    header <- readHeader clientState
-    Log.debugM "Incoming.Message.Header" (show header)
-    message <- readMessage clientState header
-    newState <- handleInboundEvent clientState message
-    Log.debugM "Incoming.Message.Processed" $ "Message processed. New state: " ++ (show newState)
-    dispatchIncomingMessages newState
+    clientState <- FRP.sync $ FRP.sample bState
+    Log.debugM "Incoming.Message.Await" $ "Awaiting messages with state: " ++ show clientState
+    message <- readMessage clientState
+    newState <- case clientState of
+                 (State.ConnectedState connected) -> handleInboundEvent connected message
+                 _ -> throwIO $ userError "Cannot handle events when not connected."
+    Log.debugM "Incoming.Message.Processed" $ "Message processed. New state: " ++ show newState
+    FRP.sync $ pushIncomingMessage (State.ConnectedState newState) --TODO What if we get a disconnect message?
+      
+    dispatchIncomingMessages bState pushIncomingMessage
 
-readHeader :: State.Connected -> IO InboundMessages.Header
-readHeader clientState =
-  case State.protocolState clientState of
+readMessage :: State.ClientState -> IO InboundMessages.InboundMessage
+readMessage clientState = do
+  header <- readHeader clientState
+  Log.debugM "Incoming.Message.Header" (show header)
+  message <- readMessageBody clientState header 
+  return message
+  
+readHeader :: State.ClientState -> IO InboundMessages.Header
+readHeader (State.ConnectingState connecting) =
+  case State.connectingProtocolState connecting of
+    State.PalaceProtocolState connection messageConverters -> PalaceInbound.readHeader connection messageConverters
+readHeader (State.ConnectedState connected) =
+  case State.protocolState connected of
       State.PalaceProtocolState connection messageConverters -> PalaceInbound.readHeader connection messageConverters
+readHeader _ = throwIO $ userError "Cannot receive header while disconnected."
 
-readMessage :: State.Connected -> InboundMessages.Header -> IO InboundMessages.InboundMessage
-readMessage clientState header =
-  case State.protocolState clientState of
+readMessageBody :: State.ClientState -> InboundMessages.Header -> IO InboundMessages.InboundMessage
+readMessageBody (State.ConnectingState connecting) header =
+  case State.connectingProtocolState connecting of
+      State.PalaceProtocolState connection messageConverters -> PalaceInbound.readMessage connection messageConverters header  
+readMessageBody (State.ConnectedState connected) header =
+  case State.protocolState connected of
       State.PalaceProtocolState connection messageConverters -> PalaceInbound.readMessage connection messageConverters header
+readMessageBody _ _ = throwIO $ userError "Cannot receive message while disconnected."
+  
+handleHandshake :: State.ClientState -> InboundMessages.Handshake -> IO State.Connecting
+handleHandshake (State.ConnectingState clientState) handshake = 
+  do
+    Log.debugM "Incoming.Handshake" (show handshake)
+    let newState = handleProtocolUpdate clientState (InboundMessages.protocolInfo handshake)
+        userRefId = InboundMessages.userRefId handshake
+    return $ State.withUserRefId newState userRefId
+handleHandshake _ _ = throwIO $ userError "Handshake received while not connecting" -- TODO Fix types
+  
+-- This is separate because it depends on the specific protocol
+handleProtocolUpdate :: State.Connecting -> InboundMessages.ProtocolInfo -> State.Connecting
+handleProtocolUpdate clientState (InboundMessages.PalaceProtocol connection endianness) =
+  State.withProtocol clientState (State.PalaceProtocolState connection newMessageConverters)
+  where newMessageConverters = Connect.messageConvertersFor endianness
 
 -- TODO Right now these need to be in IO because of logging and GUI changes. Separate those out.
 handleInboundEvent :: State.Connected -> InboundMessages.InboundMessage -> IO State.Connected
-handleInboundEvent clientState (InboundMessages.HandshakeMessage handshakeData) = handleHandshake clientState handshakeData
+handleInboundEvent clientState (InboundMessages.HandshakeMessage _) = return clientState -- These should never come in while connected.
 handleInboundEvent clientState (InboundMessages.LogonReplyMessage logonReply) = handleLogonReply clientState logonReply
 handleInboundEvent clientState (InboundMessages.ServerVersionMessage serverVersion) = handleServerVersion clientState serverVersion
 handleInboundEvent clientState (InboundMessages.ServerInfoMessage serverInfo) = handleServerInfo clientState serverInfo
@@ -69,20 +102,6 @@ handleInboundEvent clientState (InboundMessages.ChatMessage chat) = handleChat c
 handleInboundEvent clientState (InboundMessages.MovementMessage movementNotification) = handleMovement clientState movementNotification
 handleInboundEvent clientState (InboundMessages.NoOpMessage noOp) = handleNoOp clientState noOp
 
-handleHandshake :: State.Connected -> InboundMessages.Handshake -> IO State.Connected
-handleHandshake clientState handshake = 
-  do
-    Log.debugM "Incoming.Handshake" (show handshake)
-    let newState = handleProtocolUpdate clientState (InboundMessages.protocolInfo handshake)
-        userRefId = InboundMessages.userRefId handshake
-    return $ State.withUserRefId newState userRefId
-
--- This is separate because it depends on the specific protocol
-handleProtocolUpdate :: State.Connected -> InboundMessages.ProtocolInfo ->  State.Connected
-handleProtocolUpdate clientState (InboundMessages.PalaceProtocol connection endianness) =
-  State.withProtocol clientState (State.PalaceProtocolState connection newMessageConverters)
-  where newMessageConverters = Connect.messageConvertersFor endianness
-
 {- Re AlternateLogonReply: OpenPalace comments say:
   This is only sent when the server is running in "guests-are-members" mode.
   This is pointless... it's basically echoing back the logon packet that we sent to the server.
@@ -92,32 +111,32 @@ handleProtocolUpdate clientState (InboundMessages.PalaceProtocol connection endi
 handleLogonReply :: State.Connected -> InboundMessages.LogonReply -> IO State.Connected
 handleLogonReply clientState logonReply = 
   do
-    Log.debugM "Incoming.Message.LogonReply" (show logonReply)
+    Log.debugM "Incoming.Message.LogonReply" $ show logonReply
     return clientState   -- TODO return puidCrc and puidCounter when we need it
   
 handleServerVersion :: State.Connected -> InboundMessages.ServerVersion -> IO State.Connected
 handleServerVersion clientState serverVersion =
   do
-    Log.debugM "Incoming.Message.ServerVersion" $ "Server version: " ++ (show serverVersion)
+    Log.debugM "Incoming.Message.ServerVersion" $ "Server version: " ++ show serverVersion
     return clientState -- TODO Add server version to host state
 
 handleServerInfo :: State.Connected -> InboundMessages.ServerInfoNotification -> IO State.Connected
 handleServerInfo clientState serverInfo =
   do
-    Log.debugM "Incoming.Message.ServerInfo" $ "Server info: " ++ (show serverInfo)
+    Log.debugM "Incoming.Message.ServerInfo" $ "Server info: " ++ show serverInfo
     return clientState
 
 handleUserStatus :: State.Connected -> InboundMessages.UserStatusNotification -> IO State.Connected
 handleUserStatus clientState userStatus =
   do
-    Log.debugM "Incoming.Message.UserStatus" $ "User status -- User flags: " ++ (show userStatus)
+    Log.debugM "Incoming.Message.UserStatus" $ "User status -- User flags: " ++ show userStatus
     return clientState
 
 -- A user connects to this host
 handleUserLogonNotification :: State.Connected -> InboundMessages.UserLogonNotification -> IO State.Connected
 handleUserLogonNotification clientState logonNotification =
   do
-    Log.debugM  "Incoming.Message.UserLogonNotification" $ (show logonNotification)
+    Log.debugM  "Incoming.Message.UserLogonNotification" $ show logonNotification
     return clientState
     {- OpenPalace does:
          Adds the user ID to  recentLogonUserIds; sets a timer to remove it in 15 seconds.
@@ -130,7 +149,7 @@ handleMediaServerInfo clientState serverInfo =
     Log.debugM "Incoming.Message.MediaServerInfo" $ show serverInfo
     let newState = State.withMediaServerInfo clientState serverInfo
     _  <- loadRoomBackgroundImage newState
-    Log.debugM "Incoming.Message.MediaServerInfo.Processed" $ "New state: " ++ (show newState)
+    Log.debugM "Incoming.Message.MediaServerInfo.Processed" $ "New state: " ++ show newState
     return newState
 
  -- room name, background image, overlay images, props, hotspots, draw commands
@@ -140,7 +159,7 @@ handleRoomDescription clientState roomDescription =
     Log.debugM "Incoming.Message.RoomDescription" $ show roomDescription
     let newState = State.withRoomDescription clientState roomDescription
     _ <- loadRoomBackgroundImage newState
-    Log.debugM "Incoming.Message.RoomDescription.Processed" $ "New state: " ++ (show newState)
+    Log.debugM "Incoming.Message.RoomDescription.Processed" $ "New state: " ++ show newState
     return newState
   {- OpenPalace also does this when receiving these messages:
 	clearStatusMessage currentRoom
@@ -190,8 +209,7 @@ handleUserEnteredRoom clientState userNotification =
 handleUserExitedRoom :: State.Connected -> InboundMessages.UserExitedRoom -> IO State.Connected
 handleUserExitedRoom clientState exitNotification@(InboundMessages.UserExitedRoom userWhoLeft) =
   do
-    let
-        message = (User.userName $ State.userIdFor clientState userWhoLeft) ++ " left the room."
+    let message = (User.userName $ State.userIdFor clientState userWhoLeft) ++ " left the room."
         gui = State.guiState clientState
         newState = State.withUserLeavingRoom clientState userWhoLeft
     Log.debugM "Incoming.Message.NewUser" $ show exitNotification
@@ -246,14 +264,13 @@ loadRoomBackgroundImage state =
     let possibleMediaServer = State.mediaServer $ State.hostState state
         possibleImageName = State.roomBackgroundImageName . State.currentRoomState . State.hostState $ state
         roomCanvas = GUI.roomCanvas $ State.guiState state
-    Log.debugM "Load.BackgroundImage" $ "Media server url: " ++ (show possibleMediaServer)
-    Log.debugM "Load.BackgroundImage" $ "Background image: " ++ (show possibleImageName)
+    Log.debugM "Load.BackgroundImage" $ "Media server url: " ++ show possibleMediaServer
+    Log.debugM "Load.BackgroundImage" $ "Background image: " ++ show possibleImageName
     case (possibleMediaServer, possibleImageName) of
      (Just mediaServerUrl, Just imageName) ->
        do
-         let host = State.hostname $ State.hostState state
-             port = State.portId $ State.hostState state
-         Log.debugM "Load.BackgroundImage" $ "Fetching background image " ++ imageName ++ " from " ++ (show mediaServerUrl)
+         let (host, port) = State.hostAddress $ State.hostState state
+         Log.debugM "Load.BackgroundImage" $ "Fetching background image " ++ imageName ++ " from " ++ show mediaServerUrl
          possibleImagePath <- MediaLoader.fetchCachedBackgroundImagePath host port mediaServerUrl imageName
          case possibleImagePath of
            Just imagePath -> GUI.displayBackground roomCanvas imagePath
